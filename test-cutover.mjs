@@ -139,9 +139,12 @@ if (process.env.SIGNED_IN !== '0') {
   must(client.__tables.journal_entries[0].body === 'hello world', 'body stored');
   console.log(`   save -> ${jAfter - jDuring} write, body stored`);
 
-  // Weight save writes once.
+  // Weight save writes once. The default unit is now st·lb, so switch to kg
+  // explicitly rather than assuming which form the drawer opens in.
   const navD = $$('.nav-pill').find((b) => b.textContent.trim() === 'Daily');
   click(navD); await tick(300);
+  click($('.weight-unit-btn') && [...$$('.weight-unit-btn')].find((b) => b.textContent.trim() === 'kg'));
+  await tick(300);
   client.__state.calls.length = 0;
   click($('.daily-checkin-card')); await tick();
   const kg = $('input[aria-label="Weight in kilograms"]');
@@ -154,13 +157,13 @@ if (process.env.SIGNED_IN !== '0') {
 
   // Unit toggle persists.
   client.__state.calls.length = 0;
-  click(byText('.weight-unit-btn', 'st · lb')); await tick(300);
+  click([...$$('.weight-unit-btn')].find((b) => b.textContent.trim() === 'st · lb'));
+  await tick(300);
   must(writes('settings') === 1, `unit toggle should write once, got ${writes('settings')}`);
   must(client.__tables.settings[0].weight_unit === 'stlb', 'unit persisted');
   console.log(`   unit toggle -> ${writes('settings')} write, unit=stlb`);
 
-  console.log('\n3. a failing write surfaces a banner instead of vanishing');
-  // Break journal writes, then try to save.
+  console.log('\n3. a failing write surfaces a banner instead of vanishing');  // Break journal writes, then try to save.
   client.__state.failTable = 'journal_entries';
   click($$('.nav-pill').find((x) => x.textContent.trim() === 'Journal')); await tick(300);
   const ta2 = $('.journal-textarea');

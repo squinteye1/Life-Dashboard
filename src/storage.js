@@ -18,14 +18,14 @@ export function formatDate(key) {
   return new Date(y, m - 1, d).toLocaleDateString(undefined, {
     weekday: 'short',
     year: 'numeric',
-    month: 'long',
+    month: 'short',
     day: 'numeric'
   });
 }
 
 export function monthLabel(year, monthIdx) {
   return new Date(year, monthIdx, 1).toLocaleDateString(undefined, {
-    month: 'long'
+    month: 'short'
   });
 }
 

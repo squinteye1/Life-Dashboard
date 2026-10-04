@@ -121,10 +121,14 @@ const ta = host.querySelector('.journal-textarea');
 setInput(ta, 'persisted thought'); await tick(50);
 click(host.querySelector('.save-btn')); await tick(400);
 
-// Weight
+// Weight. The default unit is st·lb, so type into the stones/pounds fields
+// rather than assuming a single kg box.
 click(nav(host, 'Daily')); await tick(300);
 click(host.querySelector('.daily-checkin-card')); await tick(250);
-setInput(host.querySelector('input[aria-label="Weight in kilograms"]'), '79.6'); await tick(50);
+const stF = host.querySelector('input[aria-label="Weight in stones"]');
+const lbF = host.querySelector('input[aria-label="Weight in pounds"]');
+must(!!stF && !!lbF, 'stones/pounds fields present by default');
+setInput(stF, '12'); setInput(lbF, '9'); await tick(50);
 click(host.querySelector('.task-drawer-save')); await tick(400);
 
 // Habit toggle
@@ -151,8 +155,8 @@ must(!!$2('.daily-view'), 'daily view after reload');
 
 // Weight must be back on the card, read from the backend.
 const cardText = $2('.daily-checkin-card').textContent.replace(/\s+/g, ' ');
-must(cardText.includes('79.6 kg'), `weight restored, got: ${cardText.slice(0, 140)}`);
-console.log(`   weight after reload: ${cardText.match(/weight[^a-z]*([\d.]+ kg)/)?.[0] || 'NOT FOUND'}`);
+must(/12 st \d+ lb/.test(cardText), `weight restored in st·lb, got: ${cardText.slice(0, 140)}`);
+console.log(`   weight after reload: ${cardText.match(/weight[^a-z]*([0-9]+ st [0-9]+ lb)/)?.[0] || 'NOT FOUND'}`);
 
 // Journal must be back.
 click([...host2.querySelectorAll('.nav-pill')].find((b) => b.textContent.trim() === 'Journal'));

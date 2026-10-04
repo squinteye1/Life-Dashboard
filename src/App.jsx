@@ -44,6 +44,7 @@ import {
   totalChange,
   weeklyRate,
   WEIGHT_UNITS,
+  DEFAULT_WEIGHT_UNIT,
   MIN_KG,
   MAX_KG
 } from './weight.js';
@@ -168,7 +169,7 @@ export default function App() {
   const [journalData, setJournalData] = useState({});
   const [dailyData, setDailyData] = useState({});
   const [weightData, setWeightData] = useState({});
-  const [settings, setSettings] = useState({ weightUnit: 'kg' });
+  const [settings, setSettings] = useState({ weightUnit: DEFAULT_WEIGHT_UNIT });
 
   // Three real states, not a boolean. Rendering the loaded UI while still
   // fetching looks exactly like your entire history being deleted, so the
@@ -453,6 +454,7 @@ export default function App() {
               setView('areas');
             }}
             onOpenJournal={() => setView('journal')}
+            onOpenHabits={() => setView('habits')}
             onSaveCheckIn={saveCheckIn}
             onClearCheckIn={clearCheckIn}
             onSaveWeight={saveWeight}
@@ -481,7 +483,10 @@ function Header({
 }) {
   const isToday = viewingDate === today;
   const dateInputRef = useRef(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
+  // With the graphs hidden on small screens, this date picker is the only
+  // way to reach another day, so the menu must not swallow it.
   const openDatePicker = () => {
     const el = dateInputRef.current;
     if (!el) return;
@@ -497,14 +502,61 @@ function Header({
     }
   };
 
+  const go = (next) => {
+    setView(next);
+    setMenuOpen(false);
+  };
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
+
+  // The menu is rendered as a *sibling* of the header, not inside it.
+  // The header has backdrop-filter, which makes it the containing block for
+  // position:fixed descendants — a full-height panel nested inside it gets
+  // clipped to the header's box and lands in the wrong place entirely.
   return (
+    <>
     <header className="header">
-      <div className="brand">
-        <span className="brand-mark" aria-hidden="true">
-          ◐
-        </span>
-        <span className="brand-name">LIFE.DASHBOARD</span>
+      <div className="header-top">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">
+            ◐
+          </span>
+          <span className="brand-name">LIFE.DASHBOARD</span>
+        </div>
+        <div className="header-actions">
+          <button
+            type="button"
+            className="menu-toggle"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-menu"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+          >
+            <span aria-hidden="true">{menuOpen ? '✕' : '☰'}</span>
+          </button>
+          <button
+            type="button"
+            className="today-btn signout-btn"
+            onClick={onSignOut}
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <span className="signout-icon" aria-hidden="true">
+              ⏻
+            </span>
+          </button>
+        </div>
       </div>
+      {/* Nav and date sit in one wrapper so they can stack on desktop and
+          share a single line on a phone. */}
+      <div className="header-nav-row">
       <nav className="topnav" aria-label="Primary">
         <button
           type="button"
@@ -535,7 +587,7 @@ function Header({
           Journal
         </button>
       </nav>
-      <div className="header-meta">
+      <div className="header-date">
         <div
           className={`date-chip ${isToday ? '' : 'is-past'}`}
           role="button"
@@ -585,16 +637,61 @@ function Header({
             ← Today
           </button>
         )}
-        <button
-          type="button"
-          className="today-btn signout-btn"
-          onClick={onSignOut}
-          title="Sign out"
-        >
-          Sign out
-        </button>
+      </div>
       </div>
     </header>
+    {menuOpen && (
+      <>
+        <div
+          className="menu-backdrop"
+          onClick={() => setMenuOpen(false)}
+          aria-hidden="true"
+        />
+        <div className="mobile-menu" id="mobile-menu" role="menu">
+          {['daily', 'habits', 'areas', 'journal'].map((v) => (
+            <button
+              key={v}
+              type="button"
+              role="menuitem"
+              className={`mobile-menu-item ${view === v ? 'is-active' : ''}`}
+              style={{ '--menu-accent': `var(--accent-${v})` }}
+              onClick={() => go(v)}
+            >
+              {v[0].toUpperCase() + v.slice(1)}
+            </button>
+          ))}
+          <div className="mobile-menu-divider" />
+          {!isToday && (
+            <button
+              type="button"
+              role="menuitem"
+              className="mobile-menu-item"
+              onClick={() => {
+                setViewingDate(today);
+                setMenuOpen(false);
+              }}
+            >
+              ← Today
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            className="mobile-menu-item is-danger"
+            onClick={() => {
+              setMenuOpen(false);
+              onSignOut();
+            }}
+          >
+            <span className="signout-icon" aria-hidden="true">
+              ⏻
+            </span>
+            Sign out
+          </button>
+        </div>
+      </>
+    )}
+    </>
   );
 }
 
@@ -1348,12 +1445,8 @@ function TaskPanel({
 
           <div className="task-table-header">
             <span className="task-col-title">Title</span>
-            <span className="task-col-desc">Description</span>
             <span className="task-col-status">Status</span>
             <span className="task-col-area">Area</span>
-            <span className="task-col-date task-col-created">Created</span>
-            <span className="task-col-date task-col-modified">Modified</span>
-            <span className="task-col-date task-col-completed">Completed</span>
             <span className="task-col-deadline">Deadline</span>
             <span className="task-col-actions" />
           </div>
@@ -1421,14 +1514,12 @@ function TaskPanel({
 function TaskRow({ task, onEdit, onChangeStatus, onDelete }) {
   const status = TASK_STATUS_BY_ID[task.status] || TASK_STATUS_BY_ID.todo;
   const area = AREA_BY_ID[task.areaId] || AREAS[0];
-  const created = fmtTs(task.createdAt);
-  const modified = fmtTs(task.modifiedAt);
-  const completedDisplay = task.completedAt
-    ? fmtTs(task.completedAt).label
-    : '—';
   const deadline = fmtDeadline(task.deadlineAt);
   const deadlineDisplay = deadline ? deadline.dateLabel : '—';
   const deadlineTime = deadline?.timeLabel || '';
+  // Description and the created/modified/completed timestamps are reference
+  // data: you look them up when you open a task, not while scanning the list,
+  // so they live in the drawer rather than the table.
   const overdue =
     deadline?.overdue &&
     task.status !== 'done' &&
@@ -1452,14 +1543,9 @@ function TaskRow({ task, onEdit, onChangeStatus, onDelete }) {
         className={`task-cell-title-display task-col-title ${
           task.title ? '' : 'is-empty'
         }`}
+        title={task.title || 'Untitled task'}
       >
         {task.title || 'Untitled task'}
-      </div>
-      <div
-        className="task-cell-desc-display task-col-desc"
-        title={task.description}
-      >
-        {task.description || '—'}
       </div>
       <div
         className="task-col-status"
@@ -1488,26 +1574,6 @@ function TaskRow({ task, onEdit, onChangeStatus, onDelete }) {
           <span className="task-area-dot" />
           {area.name}
         </span>
-      </div>
-      <div
-        className="task-cell-date task-col-created"
-        title={created.tooltip}
-      >
-        {created.label}
-      </div>
-      <div
-        className="task-cell-date task-col-modified"
-        title={modified.tooltip}
-      >
-        {modified.label}
-      </div>
-      <div
-        className={`task-cell-date task-col-completed ${
-          task.completedAt ? 'has-value' : ''
-        }`}
-        title={task.completedAt ? fmtTs(task.completedAt).tooltip : ''}
-      >
-        {completedDisplay}
       </div>
       <div
         className={`task-cell-deadline task-col-deadline ${
@@ -2215,6 +2281,7 @@ function DailyView({
   setViewingDate,
   today,
   onOpenTask,
+  onOpenHabits,
   onOpenJournal,
   onSaveCheckIn,
   onClearCheckIn,
@@ -2469,21 +2536,39 @@ function DailyView({
           </span>
         </button>
 
-        {/* Weight trend: raw readings behind a 7-day mean */}
-        <WeightChart
-          series={series}
-          meanSeries={meanSeries}
-          changeAllTime={changeAllTime}
-          ratePerWeek={ratePerWeek}
-          unit={weightUnit}
-          onUnitChange={setWeightUnit}
-        />
+        {/* Journal preview — sits directly under the check-in card so
+            "how I am" and "what I wrote" read as one block. */}
+        <section className="daily-journal-card">
+          <header className="daily-journal-head">
+            <span className="control-label">Journal</span>
+            <button
+              type="button"
+              className="daily-journal-open"
+              onClick={onOpenJournal}
+            >
+              {journalPreview ? 'Open →' : 'Write →'}
+            </button>
+          </header>
+          {journalPreview ? (
+            <div className="daily-journal-body">
+              {journalMood && (
+                <span className="daily-journal-mood">
+                  <span className="mood-emoji">{journalMood.emoji}</span>
+                  <span className="mood-label">{journalMood.label}</span>
+                </span>
+              )}
+              <p className="daily-journal-preview">{journalPreview}</p>
+            </div>
+          ) : (
+            <p className="daily-journal-empty">No entry for this day.</p>
+          )}
+        </section>
 
         {/* Habits today mini-summary */}
         <button
           type="button"
           className="daily-habits-mini"
-          onClick={() => onOpenTask && onOpenTask()}
+          onClick={() => onOpenHabits && onOpenHabits()}
           title="Open habits view"
         >
           <span className="daily-habits-mini-label">Habits</span>
@@ -2545,33 +2630,6 @@ function DailyView({
           collapsed
         />
 
-        {/* Journal preview */}
-        <section className="daily-journal-card">
-          <header className="daily-journal-head">
-            <span className="control-label">Journal</span>
-            <button
-              type="button"
-              className="daily-journal-open"
-              onClick={onOpenJournal}
-            >
-              {journalPreview ? 'Open →' : 'Write →'}
-            </button>
-          </header>
-          {journalPreview ? (
-            <div className="daily-journal-body">
-              {journalMood && (
-                <span className="daily-journal-mood">
-                  <span className="mood-emoji">{journalMood.emoji}</span>
-                  <span className="mood-label">{journalMood.label}</span>
-                </span>
-              )}
-              <p className="daily-journal-preview">{journalPreview}</p>
-            </div>
-          ) : (
-            <p className="daily-journal-empty">No entry for this day.</p>
-          )}
-        </section>
-
         {/* Empty state if nothing happening */}
         {isEmpty && isToday && (
           <div className="daily-empty">
@@ -2582,6 +2640,17 @@ function DailyView({
             </div>
           </div>
         )}
+
+        {/* Weight trend: raw readings behind a 7-day mean. Sits at the
+            bottom as background context rather than a headline metric. */}
+        <WeightChart
+          series={series}
+          meanSeries={meanSeries}
+          changeAllTime={changeAllTime}
+          ratePerWeek={ratePerWeek}
+          unit={weightUnit}
+          onUnitChange={setWeightUnit}
+        />
       </div>
 
       <CheckInDrawer

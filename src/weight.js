@@ -6,10 +6,20 @@
 export const KG_PER_LB = 0.45359237;
 export const LB_PER_STONE = 14;
 
+// The unit a user gets before they choose one. Stones and pounds, because
+// that is what this app was asked for; kg stays one tap away. Change this
+// single constant to flip the default everywhere.
+export const DEFAULT_WEIGHT_UNIT = 'stlb';
+
 export const WEIGHT_UNITS = [
-  { id: 'kg', label: 'kg' },
-  { id: 'stlb', label: 'st · lb' }
+  { id: 'stlb', label: 'st · lb' },
+  { id: 'kg', label: 'kg' }
 ];
+
+// Coerce anything unrecognised (null, undefined, a stale value) to a valid id.
+export function normaliseWeightUnit(value) {
+  return value === 'kg' || value === 'stlb' ? value : DEFAULT_WEIGHT_UNIT;
+}
 
 export function kgToLb(kg) {
   return kg / KG_PER_LB;

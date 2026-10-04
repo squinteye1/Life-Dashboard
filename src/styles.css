@@ -1,4 +1,18 @@
 /* ============================================================
+   Per-view accent
+   ------------------------------------------------------------
+   Each view container redefines --accent, so all 35 existing
+   var(--accent) rules inside it retheme with no extra selectors.
+   The three heatmaps were previously identical green regardless of
+   which view you were in, which made the colour meaningless.
+   ============================================================ */
+
+.habits-view { --accent: var(--accent-habits); }
+.daily-view { --accent: var(--accent-daily); }
+.areas-view { --accent: var(--accent-areas); }
+.journal-view { --accent: var(--accent-journal); }
+
+/* ============================================================
    Life Dashboard — refined dark theme
    Fonts: DM Sans (body), DM Mono (numbers/labels),
           DM Serif Display (journal)
@@ -9,20 +23,49 @@
   --surface-1: #0d0d0d;
   --surface-2: #121212;
   --surface-3: #161616;
-  --border: #1a1a1a;
-  --border-strong: #252525;
+  --border: #2c2c2c;
+  --border-strong: #3a3a3a;
 
+  /* All three text tiers clear WCAG AA (4.5:1) against the *lightest* surface
+     they sit on, which is the worst case:
+       text      15.29:1
+       text-dim   9.04:1
+       text-faint 6.18:1
+     The faint tier used to be #555555 at 2.5:1, which is what made the UI read
+     as muddy. Keep the three tiers clearly separated when tuning these. */
   --text: #e8e8e8;
-  --text-dim: #8a8a8a;
-  --text-faint: #555555;
+  --text-dim: #b4b4b4;
+  --text-faint: #949494;
 
-  --accent: #7ec8a3; /* global jade — used for Habits */
-  --accent-tint: rgba(126, 200, 163, 0.08);
+  /* Per-view accents. Every accent clears AA as text on --bg, so these are
+     safe on labels as well as on fills. The jade/amber/blue come from the
+     daily-overview gradient; journal gets a warmer rose so it does not read
+     as an error state. */
+  --accent: var(--accent-habits);
+  --accent-habits: #7ec8a3;   /* jade    10.2:1 */
+  --accent-daily: #5a90e0;    /* blue     6.2:1 */
+  --accent-areas: #c8a030;    /* amber    8.1:1 */
+  --accent-journal: #c98aa4;  /* rose     7.3:1 */
+  --brand-gradient: linear-gradient(
+    90deg,
+    transparent,
+    #d04545 25%,
+    #c8a030 50%,
+    #5a90e0 75%,
+    transparent
+  );
 
   --cell: 12px;
   --cell-gap: 3px;
   --radius: 12px;
   --radius-sm: 8px;
+
+  /* Type scale. The floor is 12px: these labels are used 57 times and 10px
+     was below comfortable on a phone. .heatmap-month-cell and
+     .heatmap-day-label deliberately opt out — they sit in fixed-width
+     columns and cannot grow. */
+  --fs-label: 12px;
+  --fs-meta: 13px;
 
   --mono: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: 'DM Sans', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -41,7 +84,7 @@ body,
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -54,7 +97,7 @@ body {
   background:
     radial-gradient(
       1200px 600px at 50% -120px,
-      rgba(126, 200, 163, 0.04),
+      color-mix(in srgb, var(--accent) 4%, transparent),
       transparent 60%
     ),
     var(--bg);
@@ -86,7 +129,7 @@ textarea {
 }
 
 ::selection {
-  background: rgba(126, 200, 163, 0.35);
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
   color: var(--text);
 }
 
@@ -99,14 +142,16 @@ textarea {
   padding: 0 32px 120px;
 }
 
+/* Stacked rows: brand + actions, then the nav, then the date. The whole
+   header is sticky so the nav stays reachable however far you scroll. */
 .header {
   position: sticky;
   top: 0;
   z-index: 50;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  padding: 26px 0 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 0 14px;
   background: linear-gradient(
     to bottom,
     var(--bg) 55%,
@@ -117,13 +162,140 @@ textarea {
   -webkit-backdrop-filter: blur(10px);
 }
 
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* Nav and date, on one line at every width: nav to the left, date to the
+   right. The nav is allowed to shrink and scroll rather than pushing the
+   date chip off-screen or widening the page. */
+.header-nav-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.header-date {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Brand rule: the daily-overview gradient, echoed as a hairline under the
+   header so the four views feel like one product. */
+.header::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--brand-gradient);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* ---------- Mobile menu (hidden on desktop) ---------- */
+
+.menu-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  justify-self: end;
+  flex: 0 0 auto;
+}
+
+.mobile-menu {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(300px, 82vw);
+  z-index: 92;
+  background: var(--surface-1);
+  border-left: 1px solid var(--border-strong);
+  padding: 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  animation: drawer-slide-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 91;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+  animation: drawer-fade-in 200ms ease both;
+}
+
+.mobile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 12px;
+  font-family: var(--sans);
+  font-size: 15px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.mobile-menu-item.is-active {
+  color: var(--text);
+  border-left-color: var(--menu-accent, var(--accent));
+  background: var(--surface-2);
+}
+
+.mobile-menu-item.is-danger {
+  color: #ff8f8f;
+}
+
+.mobile-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 8px 6px;
+}
+
 .brand {
   display: inline-flex;
   align-items: center;
   gap: 10px;
   font-family: var(--mono);
   letter-spacing: 0.14em;
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--text-dim);
 }
 
@@ -140,18 +312,25 @@ textarea {
 }
 
 .topnav {
-  display: inline-flex;
+  display: flex;
+  align-self: flex-start;
   gap: 4px;
   padding: 4px;
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 999px;
-  justify-self: center;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.topnav::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-pill {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   padding: 8px 18px;
@@ -167,20 +346,10 @@ textarea {
 .nav-pill.is-active {
   background: var(--text);
   color: #080808;
-}
-
-.header-spacer {
-  height: 1px;
+  box-shadow: inset 0 -2px 0 var(--nav-accent, var(--accent));
 }
 
 /* Header date chip + Today shortcut */
-
-.header-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  justify-self: end;
-}
 
 .date-chip {
   position: relative;
@@ -261,7 +430,7 @@ textarea {
 }
 
 .date-chip-eyebrow {
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -272,7 +441,7 @@ textarea {
 }
 
 .date-chip-chevron {
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--text-faint);
   margin-left: 2px;
   transition: color 140ms ease;
@@ -292,7 +461,7 @@ textarea {
 
 .today-btn {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--accent);
@@ -331,7 +500,7 @@ textarea {
 
 .boot-text {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -393,7 +562,7 @@ textarea {
 
 .signin-label {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -444,7 +613,7 @@ textarea {
 
 .signin-code {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   line-height: 1.7;
   color: var(--text-dim);
   background: var(--surface-2);
@@ -472,7 +641,12 @@ textarea {
 }
 
 .signout-btn:hover {
-  color: var(--text-dim);
+  color: #ff8f8f;
+}
+
+.signout-icon {
+  font-size: 15px;
+  line-height: 1;
 }
 
 /* ----- Save failure banner ----- */
@@ -491,14 +665,14 @@ textarea {
 
 .save-error-text {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: #ff8f8f;
   overflow-wrap: anywhere;
 }
 
 .save-error-dismiss {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-dim);
@@ -522,7 +696,7 @@ textarea {
 
 .section-eyebrow {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -548,7 +722,7 @@ textarea {
 
 .section-meta {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.06em;
   color: var(--text-faint);
 }
@@ -608,7 +782,7 @@ textarea {
 
 .year-eyebrow {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -638,7 +812,7 @@ textarea {
 .year-nav-btn,
 .year-today-btn {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.06em;
   padding: 7px 12px;
   border-radius: 999px;
@@ -754,16 +928,16 @@ textarea {
   background: #161616;
 }
 .heatmap-cell.lvl-1 {
-  background: rgba(126, 200, 163, 0.22);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .heatmap-cell.lvl-2 {
-  background: rgba(126, 200, 163, 0.44);
+  background: color-mix(in srgb, var(--accent) 44%, transparent);
 }
 .heatmap-cell.lvl-3 {
-  background: rgba(126, 200, 163, 0.68);
+  background: color-mix(in srgb, var(--accent) 68%, transparent);
 }
 .heatmap-cell.lvl-4 {
-  background: rgba(126, 200, 163, 0.95);
+  background: color-mix(in srgb, var(--accent) 95%, transparent);
 }
 
 .heatmap-cell.is-today {
@@ -795,7 +969,7 @@ textarea {
   margin-top: 16px;
   padding-left: 40px; /* align under grid */
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.08em;
   color: var(--text-faint);
 }
@@ -821,16 +995,16 @@ textarea {
   background: #161616;
 }
 .legend-cell.lvl-1 {
-  background: rgba(126, 200, 163, 0.22);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .legend-cell.lvl-2 {
-  background: rgba(126, 200, 163, 0.44);
+  background: color-mix(in srgb, var(--accent) 44%, transparent);
 }
 .legend-cell.lvl-3 {
-  background: rgba(126, 200, 163, 0.68);
+  background: color-mix(in srgb, var(--accent) 68%, transparent);
 }
 .legend-cell.lvl-4 {
-  background: rgba(126, 200, 163, 0.95);
+  background: color-mix(in srgb, var(--accent) 95%, transparent);
 }
 
 .heatmap-tip {
@@ -849,7 +1023,7 @@ textarea {
 
 .tip-date {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.04em;
   color: var(--text-dim);
   margin-bottom: 2px;
@@ -904,7 +1078,7 @@ textarea {
 
 .stat-label {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.14em;
   color: var(--text-faint);
   text-transform: uppercase;
@@ -960,8 +1134,8 @@ textarea {
 .habit-card.is-checked {
   background: linear-gradient(
     135deg,
-    rgba(126, 200, 163, 0.10),
-    rgba(126, 200, 163, 0.02) 60%
+    color-mix(in srgb, var(--accent) 10%, transparent),
+    color-mix(in srgb, var(--accent) 2%, transparent) 60%
   );
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
@@ -1057,7 +1231,7 @@ textarea {
 }
 
 .habit-card-streak-suffix {
-  font-size: 10px;
+  font-size: var(--fs-label);
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1131,7 +1305,7 @@ textarea {
 
 .area-card-meta {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--text-faint);
   padding-left: 8px;
   border-left: 1px solid var(--border);
@@ -1187,7 +1361,7 @@ textarea {
 
 .area-eyebrow {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--accent);
@@ -1212,7 +1386,7 @@ textarea {
 
 .area-count {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.06em;
   color: var(--text-dim);
   padding: 6px 10px;
@@ -1234,6 +1408,11 @@ textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
+  /* The table has ~1200px of flex-basis across 9 columns. Scoping the
+     overflow here means it can never widen the page itself, which is what
+     produced the horizontal scrollbar on a phone. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .task-table {
@@ -1265,10 +1444,8 @@ textarea {
 
 /* Column flex sizing — shared by header and row cells so widths match. */
 .task-col-title { flex: 1.6 1 120px; }
-.task-col-desc { flex: 1.8 1 140px; }
 .task-col-status { flex: 0 0 116px; }
 .task-col-area { flex: 0 0 96px; }
-.task-col-date { flex: 0 0 86px; }
 .task-col-deadline { flex: 0 0 114px; }
 .task-col-actions { flex: 0 0 28px; }
 
@@ -1276,7 +1453,7 @@ textarea {
   padding-top: 10px;
   padding-bottom: 10px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -1339,14 +1516,6 @@ textarea {
   font-weight: 400;
 }
 
-.task-cell-desc-display {
-  width: 100%;
-  min-width: 0;
-  color: var(--text-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .task-status-select {
   appearance: none;
@@ -1357,7 +1526,7 @@ textarea {
   border-radius: 6px;
   color: var(--status-color, var(--text-dim));
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 6px 22px 6px 8px;
@@ -1411,7 +1580,7 @@ textarea {
 
 .task-cell-date {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.04em;
   color: var(--text-faint);
   white-space: nowrap;
@@ -1438,7 +1607,7 @@ textarea {
 }
 
 .task-cell-deadline-date {
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.04em;
   color: var(--text-dim);
   white-space: nowrap;
@@ -1448,14 +1617,14 @@ textarea {
 }
 
 .task-cell-deadline-time {
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.04em;
   color: var(--text-faint);
   white-space: nowrap;
 }
 
 .task-cell-deadline-empty {
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.04em;
   color: var(--text-faint);
 }
@@ -1468,46 +1637,48 @@ textarea {
   color: color-mix(in srgb, #ff6b6b 70%, transparent);
 }
 
+/* Adding a task is the primary action on this page, so it reads as a real
+   button in the area's accent rather than a dashed placeholder. */
 .task-add-trigger {
   width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
-  background: transparent;
-  border: 1px dashed var(--border);
+  padding: 12px 16px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 8px;
-  color: var(--text-dim);
+  color: var(--accent);
   font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
   box-sizing: border-box;
   margin-bottom: 2px;
 }
 
 .task-add-trigger:hover {
-  color: var(--text);
-  border-color: var(--text-dim);
-  background: rgba(255, 255, 255, 0.025);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  border-color: var(--accent);
 }
 
 .task-add-icon {
   width: 22px;
   height: 22px;
   border-radius: 6px;
-  background: var(--surface-3);
-  color: var(--text-faint);
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 14px;
   flex: 0 0 22px;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background 120ms ease;
 }
 
 .task-add-trigger:hover .task-add-icon {
-  background: var(--surface-2);
-  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .task-section-divider {
@@ -1515,7 +1686,7 @@ textarea {
   align-items: center;
   padding: 18px 12px 6px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -1548,25 +1719,20 @@ textarea {
   background: #1a1a1a;
 }
 
-/* Responsive column hiding — keep the table on one line at any width. */
-@media (max-width: 920px) {
-  .task-col-area,
-  .task-col-modified,
-  .task-col-completed {
-    display: none;
-  }
-  .task-col-title { flex-basis: 110px; }
-  .task-col-desc { flex-basis: 130px; }
-}
-
+/* The table is five columns now — Title, Status, Area, Deadline, Actions —
+   so it fits a phone without hiding anything. The earlier rules that dropped
+   Description/Created/Modified/Completed per breakpoint are gone with them. */
 @media (max-width: 640px) {
-  .task-col-desc,
-  .task-col-created {
-    display: none;
-  }
   .task-col-title { flex: 1 1 100px; }
-  .task-col-status { flex: 0 0 100px; }
-  .task-col-deadline { flex: 0 0 102px; }
+  .task-col-status { flex: 0 0 96px; }
+  .task-col-area { flex: 0 0 84px; }
+  .task-col-deadline { flex: 0 0 96px; }
+  /* Tighter cells: four columns x 14px of padding is 56px of the budget. */
+  .task-table-header > span,
+  .task-row-new > *,
+  .task-row-data > * {
+    padding: 6px 7px;
+  }
 }
 
 /* ============================================================
@@ -1619,7 +1785,7 @@ textarea {
 
 .task-drawer-eyebrow {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -1674,7 +1840,7 @@ textarea {
 
 .task-drawer-label {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -1775,7 +1941,7 @@ textarea {
 
 .task-drawer-status-btn {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -1843,7 +2009,7 @@ textarea {
 
 .task-drawer-quick button {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-dim);
@@ -1865,7 +2031,7 @@ textarea {
   flex-direction: column;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--text-dim);
   border-top: 1px solid var(--border);
   padding-top: 16px;
@@ -1879,7 +2045,7 @@ textarea {
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  font-size: 10px;
+  font-size: var(--fs-label);
 }
 
 .task-drawer-footer {
@@ -1902,7 +2068,7 @@ textarea {
 .task-drawer-cancel,
 .task-drawer-save {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 9px 14px;
@@ -2017,7 +2183,7 @@ textarea {
 
 .entry-toggle {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.08em;
   color: var(--text-dim);
   padding: 7px 14px;
@@ -2043,7 +2209,7 @@ textarea {
 .control-label {
   display: block;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -2064,6 +2230,7 @@ textarea {
 .mood-row {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .mood-btn {
@@ -2097,7 +2264,7 @@ textarea {
 
 .mood-label {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -2183,7 +2350,7 @@ textarea {
 
 .save-confirm {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--accent);
   letter-spacing: 0.04em;
 }
@@ -2209,9 +2376,6 @@ textarea {
     grid-template-columns: 1fr auto;
     gap: 12px;
   }
-  .header-spacer {
-    display: none;
-  }
   .year-title {
     font-size: 36px;
   }
@@ -2225,16 +2389,32 @@ textarea {
 }
 
 @media (max-width: 640px) {
+  /* Below 640 the four nav labels are replaced by the hamburger menu. The
+     logo and the sign-out icon stay in the header either way. The toggle
+     MUST be un-hidden here: hiding .topnav without showing it would leave
+     no navigation at all. */
+  .topnav {
+    display: none;
+  }
+
+  .menu-toggle {
+    display: inline-flex;
+  }
+
+  /* With the nav gone, the date chip is alone on the row and space-between
+     collapses it to the start, which lines it up under the logo. */
+  .header-nav-row {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
   :root {
     --cell: 9px;
     --cell-gap: 2px;
   }
   .nav-pill {
     padding: 7px 12px;
-    font-size: 10px;
-  }
-  .brand {
-    display: none;
+    font-size: var(--fs-label);
   }
   .year-title {
     font-size: 32px;
@@ -2400,14 +2580,14 @@ textarea {
 
 .weight-card-change-sub {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.04em;
   color: var(--text-faint);
 }
 
 .weight-card-rate {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.04em;
   color: var(--text-dim);
   padding: 2px 7px;
@@ -2426,7 +2606,7 @@ textarea {
 
 .weight-unit-btn {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -2462,7 +2642,7 @@ textarea {
   align-items: center;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.06em;
   color: var(--text-faint);
 }
@@ -2499,7 +2679,7 @@ textarea {
 .weight-tip-mean {
   margin-top: 3px;
   font-weight: 400;
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--text-dim);
 }
 
@@ -2537,7 +2717,7 @@ textarea {
 
 .weight-input-suffix {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -2596,7 +2776,7 @@ textarea {
 
 .daily-summary-eyebrow {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -2612,6 +2792,10 @@ textarea {
   display: flex;
   gap: 22px;
   min-width: 0;
+  /* Five metrics now (stress, energy, weight, change) at a larger type size.
+     Wrapping beats squeezing or overflowing on a narrow screen. */
+  flex-wrap: wrap;
+  row-gap: 12px;
 }
 
 .daily-checkin-meta-item {
@@ -2623,7 +2807,7 @@ textarea {
 
 .daily-checkin-meta-key {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -2636,21 +2820,27 @@ textarea {
   color: var(--text-dim);
 }
 
+/* The two "go do the thing" affordances on the daily cards. They were
+   low-contrast outlines that read as decoration; they are the primary
+   actions for logging, so they use the view accent and a tinted fill. */
 .daily-checkin-edit {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-dim);
-  padding: 8px 12px;
-  border: 1px solid var(--border);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 6px;
+  padding: 8px 12px;
   flex: 0 0 auto;
+  transition: background 140ms ease, border-color 140ms ease;
 }
 
 .daily-checkin-card:hover .daily-checkin-edit {
-  color: var(--text);
-  border-color: var(--text-dim);
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  border-color: var(--accent);
 }
 
 /* ---- Habits today mini ---- */
@@ -2677,7 +2867,7 @@ textarea {
 
 .daily-habits-mini-label {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -2731,7 +2921,7 @@ textarea {
 
 .daily-section-title {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-dim);
@@ -2739,7 +2929,7 @@ textarea {
 
 .daily-section-count {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.06em;
   color: var(--text-faint);
   padding: 1px 8px;
@@ -2783,7 +2973,7 @@ textarea {
   border: 1px dashed var(--border);
   border-radius: var(--radius-sm);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.04em;
   color: var(--text-faint);
   text-align: center;
@@ -2840,12 +3030,12 @@ textarea {
 .daily-task-area {
   width: auto;
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: var(--fs-meta);
 }
 
 .daily-task-time {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.04em;
   color: var(--text-faint);
   white-space: nowrap;
@@ -2875,21 +3065,22 @@ textarea {
 
 .daily-journal-open {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-dim);
-  background: transparent;
-  border: 1px solid var(--border);
+  color: var(--accent-journal);
+  background: color-mix(in srgb, var(--accent-journal) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-journal) 50%, transparent);
   border-radius: 6px;
-  padding: 5px 10px;
+  padding: 6px 12px;
   cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease;
+  transition: background 140ms ease, border-color 140ms ease;
 }
 
 .daily-journal-open:hover {
-  color: var(--text);
-  border-color: var(--text-dim);
+  background: color-mix(in srgb, var(--accent-journal) 28%, transparent);
+  border-color: var(--accent-journal);
 }
 
 .daily-journal-body {
@@ -2921,7 +3112,7 @@ textarea {
 
 .daily-journal-empty {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--text-faint);
   margin: 0;
 }
@@ -2971,7 +3162,7 @@ textarea {
 
 .daily-field-meta {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -2979,7 +3170,7 @@ textarea {
 
 .daily-clear-btn {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -3004,7 +3195,7 @@ textarea {
 
 .daily-vibe-band-label {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -3069,7 +3260,7 @@ textarea {
 
 .daily-vibe-value {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.04em;
   color: var(--text-faint);
 }
@@ -3088,7 +3279,7 @@ textarea {
 
 .daily-meter-btn {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   font-weight: 500;
   color: var(--text-faint);
   background: var(--surface-2);
@@ -3142,4 +3333,99 @@ textarea {
   .daily-task-title { grid-area: title; }
   .daily-task-area { grid-area: area; }
   .daily-task-time { grid-area: time; }
+}
+
+/* ============================================================
+   Small screens
+   ------------------------------------------------------------
+   Two problems, one breakpoint.
+
+   1. The header is a 3-column grid (brand | nav | date chip + sign
+      out). On a phone those fight for width and the grid refuses to
+      shrink, which is what produced the horizontal scrollbar. Below
+      760px the nav moves into a slide-in menu, leaving room for the
+      brand and the date chip.
+
+   2. The year graphs need ~795px. Their cells drop to 8-9px and a
+      horizontal scroll, so they read as a smear. They are hidden
+      below 640px, which makes the header date picker the only way to
+      reach another day — hence both changes in the same breakpoint.
+   ============================================================ */
+
+@media (max-width: 760px) {
+  .header {
+    gap: 8px;
+    padding: 10px 0 8px;
+  }
+
+  /* Nav and date share one line. The nav takes the slack and scrolls
+     internally, so the date chip can never be pushed off-screen or widen
+     the page. The logo and sign-out stay put in the row above. */
+  .header-nav-row {
+    gap: 8px;
+  }
+
+  .topnav {
+    flex: 1 1 auto;
+    min-width: 0;
+    align-self: auto;
+    padding: 3px;
+  }
+
+  .nav-pill {
+    font-size: 10px;
+    padding: 5px 8px;
+  }
+
+  .header-date {
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  .brand {
+    min-width: 0;
+  }
+
+  .brand-name {
+    font-size: var(--fs-label);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .date-chip-value {
+    font-size: var(--fs-meta);
+  }
+}
+
+/* Too narrow for four nav labels beside a date: fall back to the menu. */
+
+@media (max-width: 640px) {
+  /* 32px of padding on each side costs 64px of a 360px screen. */
+  .app {
+    padding: 0 16px 96px;
+  }
+
+  /* The header date picker is the only navigation left, so make it
+     unmistakably the primary control rather than a small chip. */
+  .date-chip {
+    padding: 8px 12px;
+  }
+
+  .date-chip-display {
+    gap: 6px;
+  }
+
+  .date-chip-eyebrow {
+    display: none;
+  }
+
+  /* Year graphs: unusable at this width. The Habits view renders
+     YearHeatmap as a direct child (no .*-graph wrapper), so it needs
+     targeting separately. */
+  .daily-graph,
+  .journal-graph,
+  .habits-view > .heatmap-wrap {
+    display: none;
+  }
 }

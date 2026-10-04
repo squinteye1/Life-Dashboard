@@ -17,6 +17,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { normaliseWeightUnit } from './weight.js';
 
 const T = {
   habits: 'habits',
@@ -297,7 +298,7 @@ export function createApi(client, opts = {}) {
         weightData: groupByDay(weights.data, 'day', rowToWeight),
         journalData: groupByDay(journal.data, 'day', rowToJournal),
         taskData: groupTasks(tasks.data),
-        settings: { weightUnit: s?.weight_unit === 'stlb' ? 'stlb' : 'kg' }
+        settings: { weightUnit: normaliseWeightUnit(s?.weight_unit) }
       });
     },
 
@@ -551,7 +552,7 @@ export function createApi(client, opts = {}) {
             .upsert(
               {
                 user_id: userId,
-                weight_unit: patch.weightUnit === 'stlb' ? 'stlb' : 'kg',
+                weight_unit: normaliseWeightUnit(patch.weightUnit),
                 updated_at: new Date().toISOString()
               },
               { onConflict: 'user_id' }
