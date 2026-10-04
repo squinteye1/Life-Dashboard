@@ -82,21 +82,31 @@ const hiddenCols = (src) => {
   return [...out].sort();
 };
 
-console.log('\ntask columns: the four named ones are hidden below 920px:');
-const hiddenAt920 = hiddenCols(block(920));
-console.log(`   hidden at 920px: ${hiddenAt920.join(', ') || '(none)'}`);
-for (const col of ['desc', 'created', 'modified', 'completed'])
-  must(hiddenAt920.includes(`.task-col-${col}`), `.task-col-${col} hidden`);
-must(!hiddenAt920.includes('.task-col-area'), 'area is NOT hidden at 920px');
-must(!hiddenAt920.includes('.task-col-title'), 'title is NOT hidden');
-must(!hiddenAt920.includes('.task-col-status'), 'status is NOT hidden');
-must(!hiddenAt920.includes('.task-col-deadline'), 'deadline is NOT hidden');
-must(block(920).includes('.task-col-area { flex'), 'area is still sized at 920px');
-
-console.log('\nvery narrow drops area as the next thing to go:');
-const hiddenAt480 = hiddenCols(block(480));
-console.log(`   hidden at 480px: ${hiddenAt480.join(', ') || '(none)'}`);
-must(hiddenAt480.includes('.task-col-area'), 'area hidden below 480px');
+console.log('\ntask table: five columns, nothing hidden per breakpoint:');
+// The table is Title, Status, Area, Deadline, Actions. It fits a phone, so
+// no column is dropped at any width. Guards against the four removed
+// columns creeping back in.
+{
+  const f = flat(css);
+  for (const col of ['desc', 'created', 'modified', 'completed']) {
+    must(!f.includes(`.task-col-${col}`), `.task-col-${col} gone from the stylesheet`);
+    must(!app.includes(`task-col-${col}`), `no ${col} cell in the markup`);
+  }
+  const start = app.indexOf('task-row-data');
+  const body = app.slice(start, start + 2600);
+  const rowCols = [...new Set([...body.matchAll(/task-col-[a-z-]+/g)].map((m) => m[0]))];
+  console.log(`   row columns: ${rowCols.join(', ')}`);
+  const keep = [
+    'task-col-title', 'task-col-status', 'task-col-area',
+    'task-col-deadline', 'task-col-actions'
+  ];
+  must(rowCols.length > 0 && rowCols.every((c) => keep.includes(c)),
+    'the row renders only the five kept columns');
+  for (const bp of [920, 640, 480]) {
+    const gone = hiddenCols(block(bp)).filter((s) => s.startsWith('.task-col-'));
+    must(gone.length === 0, `no task columns hidden at ${bp}px (found ${gone.join(', ')})`);
+  }
+}
 
 console.log('\ntable cannot widen the page:');
 must(css.includes('overflow-x: auto;\n  -webkit-overflow-scrolling: touch;') || css.includes('.task-table-scroll'), 'task-table-scroll exists');
@@ -153,24 +163,40 @@ must(
   `menu toggle is hidden at desktop widths (got ${displayOf(baseCss, '.menu-toggle')})`
 );
 
-const b760 = block(760);
-const topnavAt760 = effective('.topnav', b760);
-const toggleAt760 = effective('.menu-toggle', b760);
-console.log(`   .topnav at 760px      -> display: ${topnavAt760}`);
-console.log(`   .menu-toggle at 760px -> display: ${toggleAt760}`);
+// Below 640 the pills are replaced by the hamburger, so check that width.
+const NAV_BP = 640;
+const bNav = block(NAV_BP);
+const topnavAt = effective('.topnav', bNav);
+const toggleAt = effective('.menu-toggle', bNav);
+console.log(`   .topnav at ${NAV_BP}px      -> display: ${topnavAt}`);
+console.log(`   .menu-toggle at ${NAV_BP}px -> display: ${toggleAt}`);
 
 const isHidden = (v) => v === 'none' || v === undefined;
-must(isHidden(topnavAt760), 'nav pills are hidden on small screens');
+must(isHidden(topnavAt), `nav pills are hidden at ${NAV_BP}px and below`);
 must(
-  !isHidden(toggleAt760),
-  `the hamburger is VISIBLE on small screens (got ${toggleAt760})`
+  !isHidden(toggleAt),
+  `the hamburger is VISIBLE at ${NAV_BP}px and below (got ${toggleAt})`
 );
-
-// The invariant that actually matters: never both hidden.
 must(
-  !(isHidden(topnavAt760) && isHidden(toggleAt760)),
+  !(isHidden(topnavAt) && isHidden(toggleAt)),
   'navigation is not dead at this breakpoint'
 );
+// And the pills must still be the nav just above the breakpoint.
+must(
+  !isHidden(effective('.topnav', block(NAV_BP + 80))),
+  'nav pills show above the breakpoint'
+);
+must(
+  isHidden(effective('.menu-toggle', block(NAV_BP + 80))),
+  'the hamburger is desktop-only above the breakpoint'
+);
+// The logo is never hidden at any width.
+for (const bp of [920, 760, 640, 480, 360]) {
+  must(
+    !isHidden(effective('.brand', block(bp))),
+    `logo (brand) is visible at ${bp}px`
+  );
+}
 
 must(
   app.includes("['daily', 'habits', 'areas', 'journal'].map"),

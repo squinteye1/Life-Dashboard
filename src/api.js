@@ -51,6 +51,9 @@ export function rowToTask(r) {
     title: r.title,
     description: r.description,
     status: r.status,
+    // Columns added after the first release may be absent on a row written
+    // before the migration, so default rather than trusting the value.
+    isEvent: r.is_event === true,
     createdAt: toMs(r.created_at),
     modifiedAt: toMs(r.modified_at),
     completedAt: toMs(r.completed_at),
@@ -66,6 +69,7 @@ export function taskToRow(t, userId) {
     title: t.title || '',
     description: t.description || '',
     status: t.status || 'todo',
+    is_event: t.isEvent === true,
     deadline_at: toIso(t.deadlineAt),
     modified_at: toIso(t.modifiedAt ?? Date.now()),
     completed_at: toIso(t.completedAt)

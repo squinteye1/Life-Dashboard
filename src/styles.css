@@ -1503,17 +1503,131 @@ textarea {
 .task-cell-title-display {
   width: 100%;
   min-width: 0;
+  display: flex;
+  align-items: center;
   font-weight: 500;
   color: var(--text);
   overflow: hidden;
+}
+
+.task-cell-title-text {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .task-cell-title-display.is-empty {
   color: var(--text-faint);
   font-style: italic;
   font-weight: 400;
+}
+
+/* ----- Events -----
+   A visual marker only. Events share the status set with everything else, so
+   nothing here changes behaviour -- it just makes a fixed, time-boxed
+   commitment distinguishable from open-ended work at a glance. */
+
+.task-event-marker {
+  color: var(--accent);
+  font-size: 0.95em;
+  line-height: 1;
+  margin-right: 7px;
+  flex: 0 0 auto;
+}
+
+.task-event-glyph {
+  margin-right: 5px;
+  font-size: 0.95em;
+  line-height: 1;
+}
+
+/* Kind picker in the task drawer */
+.task-drawer-event-toggle {
+  display: flex;
+  gap: 6px;
+}
+
+.task-drawer-event-btn {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 10px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.task-drawer-event-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.task-drawer-event-btn.is-active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  font-weight: 600;
+}
+
+/* Area panel: the kind filter sits beside the open count */
+.area-header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.area-filter {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.area-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.area-filter-btn:hover {
+  color: var(--text-dim);
+}
+
+.area-filter-btn.is-active {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.area-filter-count {
+  font-size: 0.85em;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 999px;
+  padding: 1px 5px;
 }
 
 

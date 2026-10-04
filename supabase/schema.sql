@@ -7,6 +7,10 @@
 --
 -- Run this once in the Supabase SQL editor (Dashboard > SQL Editor > New query).
 -- Every statement is idempotent, so re-running it is safe.
+--
+-- THIS FILE IS FOR A FRESH DATABASE. It will not add a column to a database
+-- that already exists — for changes to a live database use the numbered files
+-- in supabase/migrations/, which are applied in order.
 -- ============================================================================
 
 
@@ -145,6 +149,9 @@ create table if not exists public.tasks (
   status       text not null default 'todo'
                  check (status in ('todo', 'in_progress', 'done', 'rejected')),
   deadline_at  timestamptz,
+  -- Visual marker for a fixed, time-boxed event (appointment, flight, ...).
+  -- Events share the existing status set; there are no event-only statuses.
+  is_event     boolean not null default false,
   created_at   timestamptz not null default now(),
   modified_at  timestamptz not null default now(),
   completed_at timestamptz,

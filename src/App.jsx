@@ -1245,9 +1245,17 @@ function AreasView({
   const defaultNewTaskAreaId = isAll ? AREAS[0].id : activeAreaId;
   const headerArea = isAll ? null : AREA_BY_ID[activeAreaId];
   const headerColor = isAll ? '#ffffff' : headerArea.color;
-  const visibleTasks = isAll
+  // Client-side filter over tasks already in memory, so it costs no query.
+  // Answers "what kind?" while the area selector above answers "where?".
+  const [kindFilter, setKindFilter] = useState('all');
+  const areaTasks = isAll
     ? aggregatedTasks
     : aggregatedTasks.filter((t) => t.areaId === activeAreaId);
+  const visibleTasks =
+    kindFilter === 'all'
+      ? areaTasks
+      : areaTasks.filter((t) => (kindFilter === 'events') === (t.isEvent === true));
+  const eventCount = areaTasks.filter((t) => t.isEvent === true).length;
   const openCount = visibleTasks.filter(
     (t) => t.status === 'todo' || t.status === 'in_progress'
   ).length;
@@ -1320,7 +1328,31 @@ function AreasView({
                 : headerArea.blurb}
             </div>
           </div>
-          <div className="area-count">{openCount} open</div>
+          <div className="area-header-right">
+            <div className="area-filter" role="group" aria-label="Filter by kind">
+              {[
+                ['all', 'All'],
+                ['events', 'Events'],
+                ['tasks', 'Tasks']
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`area-filter-btn ${
+                    kindFilter === id ? 'is-active' : ''
+                  }`}
+                  aria-pressed={kindFilter === id}
+                  onClick={() => setKindFilter(id)}
+                >
+                  {label}
+                  {id === 'events' && eventCount > 0 && (
+                    <span className="area-filter-count">{eventCount}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="area-count">{openCount} open</div>
+          </div>
         </div>
 
         <TaskPanel
@@ -1545,7 +1577,18 @@ function TaskRow({ task, onEdit, onChangeStatus, onDelete }) {
         }`}
         title={task.title || 'Untitled task'}
       >
-        {task.title || 'Untitled task'}
+        {task.isEvent && (
+          <span
+            className="task-event-marker"
+            title="Event"
+            aria-label="Event"
+          >
+            ◷
+          </span>
+        )}
+        <span className="task-cell-title-text">
+          {task.title || 'Untitled task'}
+        </span>
       </div>
       <div
         className="task-col-status"
@@ -1708,6 +1751,7 @@ function TaskDrawer({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState('todo');
+  const [isEvent, setIsEvent] = useState(false);
   const [areaId, setAreaId] = useState(initialAreaId);
   const [deadlineDate, setDeadlineDate] = useState('');
   const [deadlineTime, setDeadlineTime] = useState('23:59');
@@ -1721,6 +1765,7 @@ function TaskDrawer({
       setTitle(task.title || '');
       setDescription(task.description || '');
       setStatus(task.status || 'todo');
+      setIsEvent(task.isEvent === true);
       setAreaId(task.areaId || initialAreaId);
       const ts = getDeadlineTs(task.deadlineAt);
       if (ts != null) {
@@ -1742,6 +1787,7 @@ function TaskDrawer({
       setTitle('');
       setDescription('');
       setStatus('todo');
+      setIsEvent(false);
       setAreaId(initialAreaId);
       setDeadlineDate('');
       setDeadlineTime('23:59');
@@ -1797,6 +1843,7 @@ function TaskDrawer({
         title: trimmed,
         description: description.trim(),
         status,
+        isEvent,
         areaId,
         createdAt: now,
         modifiedAt: now,
@@ -1809,6 +1856,7 @@ function TaskDrawer({
         title: trimmed,
         description: description.trim(),
         status,
+        isEvent,
         areaId,
         modifiedAt: now,
         completedAt:
@@ -1897,6 +1945,38 @@ function TaskDrawer({
                   {s.label}
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* A visual marker only: events use the same status set as
+              everything else, so there is nothing else to configure. */}
+          <div className="task-drawer-field">
+            <div className="daily-field-head">
+              <span className="task-drawer-label">Kind</span>
+              <span className="daily-field-meta">
+                {isEvent ? 'Fixed time' : 'Whenever you get to it'}
+              </span>
+            </div>
+            <div className="task-drawer-event-toggle" role="group" aria-label="Task kind">
+              <button
+                type="button"
+                className={`task-drawer-event-btn ${!isEvent ? 'is-active' : ''}`}
+                aria-pressed={!isEvent}
+                onClick={() => setIsEvent(false)}
+              >
+                Task
+              </button>
+              <button
+                type="button"
+                className={`task-drawer-event-btn ${isEvent ? 'is-active' : ''}`}
+                aria-pressed={isEvent}
+                onClick={() => setIsEvent(true)}
+              >
+                <span className="task-event-glyph" aria-hidden="true">
+                  ◷
+                </span>
+                Event
+              </button>
             </div>
           </div>
 
@@ -2726,6 +2806,15 @@ function DeadlineSection({
                   title={dl?.tooltip || ''}
                 >
                   <span className="daily-task-title">
+                    {t.isEvent && (
+                      <span
+                        className="task-event-marker"
+                        title="Event"
+                        aria-label="Event"
+                      >
+                        ◷
+                      </span>
+                    )}
                     {t.title || 'Untitled task'}
                   </span>
                   <span
