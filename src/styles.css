@@ -312,6 +312,204 @@ textarea {
   margin-top: 18px;
 }
 
+/* ----- Boot / sign in ----- */
+
+.boot-screen {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.boot-mark {
+  font-size: 28px;
+  color: var(--text-faint);
+  animation: boot-pulse 1.6s ease-in-out infinite;
+}
+
+.boot-text {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+@keyframes boot-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+.signin-screen {
+  min-height: 70vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+}
+
+.signin-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.signin-mark {
+  font-size: 22px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.signin-title {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin: 0;
+  text-align: center;
+}
+
+.signin-sub {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 0 0 6px;
+  text-align: center;
+}
+
+.signin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.signin-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.signin-input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 11px 12px;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text);
+}
+
+.signin-input:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.signin-error {
+  font-size: 12px;
+  color: #ff6b6b;
+  padding: 9px 11px;
+  background: rgba(255, 107, 107, 0.08);
+  border: 1px solid rgba(255, 107, 107, 0.25);
+  border-radius: var(--radius-sm);
+}
+
+.signin-submit {
+  margin-top: 6px;
+  padding: 12px;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--bg);
+  background: var(--text);
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.signin-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.signin-code {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.signin-note {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: 0;
+}
+
+.signin-note strong {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.signout-btn {
+  color: var(--text-faint);
+}
+
+.signout-btn:hover {
+  color: var(--text-dim);
+}
+
+/* ----- Save failure banner ----- */
+
+.save-error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 11px 14px;
+  background: rgba(255, 107, 107, 0.08);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  border-radius: var(--radius-sm);
+}
+
+.save-error-text {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #ff8f8f;
+  overflow-wrap: anywhere;
+}
+
+.save-error-dismiss {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
 /* ----- Section / typography primitives ----- */
 
 .section-header {
@@ -660,6 +858,21 @@ textarea {
 .tip-count {
   font-weight: 500;
   color: var(--text);
+}
+
+/* Journal cells carry a text preview, so their tooltip has to wrap and cap
+   its width instead of running on one line past the viewport edge. */
+.heatmap-tip-wrap-text {
+  white-space: normal;
+  max-width: 280px;
+  width: max-content;
+}
+
+.heatmap-tip-wrap-text .tip-count {
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
 }
 
 /* ----- Year stats ----- */
@@ -1746,11 +1959,27 @@ textarea {
    JOURNAL VIEW
    ============================================================ */
 
+/* The presence graph spans the full width (53 cells need ~795px), matching
+   the Daily page. The editor sits below it, capped so prose keeps a
+   readable line length instead of stretching the full page width. */
 .journal-view {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 22px;
   align-items: start;
+}
+
+.journal-graph {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.journal-graph-header {
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .journal-editor {
@@ -1760,6 +1989,9 @@ textarea {
   padding: 26px;
   position: relative;
   overflow: hidden;
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
 }
 
 .journal-editor::before {
@@ -1958,97 +2190,6 @@ textarea {
 
 /* ----- Past journal entries ----- */
 
-.journal-past {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 22px;
-  position: sticky;
-  top: 90px;
-  max-height: calc(100vh - 110px);
-  display: flex;
-  flex-direction: column;
-}
-
-.journal-past-header {
-  margin-bottom: 14px;
-}
-
-.journal-past-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.journal-past-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.journal-past-list::-webkit-scrollbar-thumb {
-  background: #1f1f1f;
-  border-radius: 4px;
-}
-
-.journal-card {
-  padding: 14px 16px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  transition: border-color 120ms ease;
-}
-
-.journal-card:hover {
-  border-color: var(--border-strong);
-}
-
-.journal-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.journal-card-date {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-dim);
-  letter-spacing: 0.04em;
-}
-
-.journal-card-mood {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.journal-card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 10px;
-}
-
-.journal-card-tag {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  padding: 2px 8px;
-  border: 1px solid;
-  border-radius: 999px;
-  text-transform: uppercase;
-}
-
-.journal-card-preview {
-  margin: 0;
-  font-family: var(--serif);
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--text-dim);
-}
-
 /* ============================================================
    Responsive
    ============================================================ */
@@ -2076,10 +2217,6 @@ textarea {
   }
   .journal-view {
     grid-template-columns: 1fr;
-  }
-  .journal-past {
-    position: static;
-    max-height: none;
   }
   .area-selector {
     margin: 0 -18px;
@@ -2149,11 +2286,34 @@ textarea {
    DAILY VIEW — vibe, stress, energy
    ============================================================ */
 
+/* Single column: the year graph spans the top, the overview takes the full
+   width below it. The old second column is gone — it held the past-check-in
+   drawer, and left ~420px of dead space once that was removed. */
 .daily-view {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 22px;
   align-items: start;
+}
+
+/* Layout only — .heatmap-wrap supplies the card chrome, same as Year in
+   Pixels. */
+.daily-graph {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.daily-graph-header {
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.daily-graph-title {
+  font-size: 22px;
+  letter-spacing: -0.02em;
 }
 
 .daily-overview {
@@ -2201,6 +2361,188 @@ textarea {
 }
 
 /* ---- Check-in summary card ---- */
+
+/* ----- Weight ----- */
+
+.weight-card {
+  padding: 16px 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.weight-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.weight-card-figures {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.weight-card-change {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.weight-card-change-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.weight-card-rate {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.weight-unit-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.weight-unit-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  padding: 5px 9px;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.weight-unit-btn:hover {
+  color: var(--text);
+}
+
+.weight-unit-btn.is-active {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.weight-chart-wrap {
+  position: relative;
+}
+
+.weight-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.weight-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.weight-legend-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.weight-legend-line {
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.weight-empty {
+  padding: 26px 0;
+  text-align: center;
+}
+
+.weight-tip {
+  background: #050505;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  z-index: 100;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.weight-tip-mean {
+  margin-top: 3px;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Weight inputs inside the check-in drawer */
+
+.weight-input-row {
+  display: flex;
+  gap: 10px;
+}
+
+.weight-input-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 12px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.weight-input {
+  background: transparent;
+  border: 0;
+  padding: 12px 0;
+  font-family: var(--mono);
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.weight-input:focus {
+  outline: none;
+}
+
+.weight-input-suffix {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
 
 .daily-checkin-card {
   display: grid;
@@ -2568,6 +2910,9 @@ textarea {
   line-height: 1.5;
   color: var(--text-dim);
   margin: 0;
+  /* The overview is full width, so cap the measure: an uncapped 13px line
+     across ~1000px runs to ~135 characters. */
+  max-width: 68ch;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -2767,91 +3112,7 @@ textarea {
 
 /* ---- Past entries side panel ---- */
 
-.daily-past {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  position: sticky;
-  top: 80px;
-  max-height: calc(100vh - 100px);
-  overflow-y: auto;
-}
-
-.daily-past-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.daily-past-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 120ms ease, background 120ms ease;
-  color: var(--text);
-}
-
-.daily-past-card:hover {
-  border-color: var(--border-strong);
-  background: rgba(255, 255, 255, 0.025);
-}
-
-.daily-past-date {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-
-.daily-past-metrics {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-}
-
-.daily-past-metric {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text);
-  min-width: 0;
-}
-
-.daily-past-swatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  flex: 0 0 10px;
-}
-
-.daily-past-meta {
-  display: flex;
-  gap: 8px;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  color: var(--text-faint);
-}
-
 @media (max-width: 900px) {
-  .daily-view {
-    grid-template-columns: 1fr;
-  }
   .daily-checkin-card {
     grid-template-columns: 1fr;
     gap: 14px;
@@ -2862,12 +3123,7 @@ textarea {
   .daily-row {
     grid-template-columns: 1fr;
   }
-  .daily-past {
-    position: static;
-    max-height: none;
-  }
 }
-
 @media (max-width: 540px) {
   .daily-vibe-band-grid {
     grid-template-columns: 1fr 1fr;

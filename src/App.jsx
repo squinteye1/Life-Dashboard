@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AREAS,
   AREA_BY_ID,
@@ -12,41 +12,153 @@ import {
   TASK_STATUS_BY_ID
 } from './areas.js';
 import {
-  storage,
-  migrateFromV1,
   todayKey,
   formatDate,
   monthLabel,
   dateFromKey,
-  uid
+  daysBetween,
+  uid,
+  pad2
 } from './storage.js';
+import { api, isConfigured } from './api.js';
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Scatter,
+  Line
+} from 'recharts';
+import {
+  kgToLb,
+  lbToKg,
+  kgToStonesLbs,
+  stonesLbsToKg,
+  isPlausibleKg,
+  formatWeight,
+  formatDelta,
+  weightSeries,
+  rollingMean,
+  totalChange,
+  weeklyRate,
+  WEIGHT_UNITS,
+  MIN_KG,
+  MAX_KG
+} from './weight.js';
 
 // ----------------------------------------------------------------------------
 // Boot
 // ----------------------------------------------------------------------------
 
-// Bring an old-shape task {text, priority, done, createdAt} into the new shape
-// {title, description, status, createdAt, modifiedAt, completedAt, deadlineAt}.
-// Returns the input unchanged if it's already in the new shape.
-function migrateTaskShape(t) {
-  if (!t || typeof t !== 'object') return t;
-  if (t.title !== undefined) return t;
-  const createdAt = t.createdAt || Date.now();
-  const done = !!t.done;
-  return {
-    id: t.id,
-    title: t.text || '',
-    description: '',
-    status: done ? 'done' : 'todo',
-    createdAt,
-    modifiedAt: createdAt,
-    completedAt: done ? createdAt : null,
-    deadlineAt: null
+function BootScreen() {
+  return (
+    <div className="boot-screen">
+      <div className="boot-mark" aria-hidden="true">
+        ◐
+      </div>
+      <div className="boot-text">Loading your dashboard…</div>
+    </div>
+  );
+}
+
+function SignInScreen({ onSignIn, error, configured }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!email.trim() || !password) {
+      setMsg('Enter your email and password.');
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    const err = await onSignIn(email.trim(), password);
+    if (err) setMsg(err);
+    setBusy(false);
   };
+
+  if (!configured) {
+    return (
+      <div className="signin-screen">
+        <div className="signin-card">
+          <div className="signin-mark" aria-hidden="true">
+            ◐
+          </div>
+          <h1 className="signin-title">Not configured</h1>
+          <p className="signin-sub">
+            Add these to <code>.env.local</code> in the project root, then
+            restart the dev server:
+          </p>
+          <pre className="signin-code">
+            VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co{'\n'}
+            VITE_SUPABASE_ANON_KEY=your-anon-key
+          </pre>
+          <p className="signin-note">
+            Only the <strong>anon public</strong> key belongs here. Never the
+            service role key.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="signin-screen">
+      <form className="signin-card" onSubmit={submit}>
+        <div className="signin-mark" aria-hidden="true">
+          ◐
+        </div>
+        <h1 className="signin-title">LIFE.DASHBOARD</h1>
+        <p className="signin-sub">Sign in to load your data.</p>
+
+        <label className="signin-field">
+          <span className="signin-label">email</span>
+          <input
+            type="email"
+            className="signin-input"
+            value={email}
+            autoComplete="username"
+            onChange={(e) => setEmail(e.target.value)}
+            autoFocus
+          />
+        </label>
+
+        <label className="signin-field">
+          <span className="signin-label">password</span>
+          <input
+            type="password"
+            className="signin-input"
+            value={password}
+            autoComplete="current-password"
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </label>
+
+        {msg && (
+          <div className="signin-error" role="alert">
+            {msg}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          className="signin-submit"
+          disabled={busy}
+        >
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
+      </form>
+    </div>
+  );
 }
 
 export default function App() {
-  const [view, setView] = useState('habits');
+  const [view, setView] = useState('daily');
   const [activeAreaId, setActiveAreaId] = useState(AREAS[0].id);
   const [viewingDate, setViewingDate] = useState(todayKey());
 
@@ -55,67 +167,224 @@ export default function App() {
   const [taskData, setTaskData] = useState({});
   const [journalData, setJournalData] = useState({});
   const [dailyData, setDailyData] = useState({});
-  const [hydrated, setHydrated] = useState(false);
+  const [weightData, setWeightData] = useState({});
+  const [settings, setSettings] = useState({ weightUnit: 'kg' });
 
-  useEffect(() => {
-    migrateFromV1();
-    const loaded = storage.load();
+  // Three real states, not a boolean. Rendering the loaded UI while still
+  // fetching looks exactly like your entire history being deleted, so the
+  // loading state gets its own screen.
+  const [authState, setAuthState] = useState('checking'); // checking|signedOut|ready
+  const [loadError, setLoadError] = useState(null);
+  const [saveError, setSaveError] = useState(null);
 
-    const habits = Array.isArray(loaded.habits) && loaded.habits.length
-      ? loaded.habits
+  // Write failures must be visible. localStorage always succeeded, so it is
+  // easy to forget that a network write can silently not happen.
+  const onApiError = useCallback((what, err) => {
+    setSaveError(`${what}: ${err?.message || err}`);
+  }, []);
+
+  const db = useMemo(
+    () => api({ onError: onApiError }),
+    [onApiError]
+  );
+
+  const loadAll = useCallback(async () => {
+    const res = await db.hydrate();
+    if (!res.ok) {
+      setLoadError(res.error?.message || 'Could not load your data.');
+      setAuthState('signedOut');
+      return;
+    }
+    const d = res.data;
+    const nextHabits = d.habits.length
+      ? d.habits
       : GLOBAL_HABITS.map((h) => ({ ...h }));
+    setHabits(nextHabits);
+    setHabitData(d.habitData);
+    setTaskData(d.taskData);
+    setJournalData(d.journalData);
+    setDailyData(d.dailyData);
+    setWeightData(d.weightData);
+    setSettings(d.settings);
+    // First run: seed the default habits. Idempotent, so safe on every boot.
+    if (!d.habits.length) await db.saveHabits(nextHabits);
+    setLoadError(null);
+    setAuthState('ready');
+  }, [db]);
 
-    // Migrate tasks from the v1 shape ({text, priority, done, createdAt})
-    // into the v2 shape ({title, description, status, createdAt,
-    // modifiedAt, completedAt, deadlineAt, areaId}).
-    const rawTaskData = loaded.taskData || {};
-    const migratedTaskData = {};
-    let didMigrate = false;
-    for (const [areaId, list] of Object.entries(rawTaskData)) {
-      const arr = Array.isArray(list) ? list : [];
-      migratedTaskData[areaId] = arr.map((t) => {
-        const next = migrateTaskShape(t);
-        if (next.areaId !== areaId) {
-          didMigrate = true;
-          return { ...next, areaId };
+  // Resolve the session, then load. Re-runs when the session changes.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await db.getSession();
+      if (cancelled) return;
+      if (!res.ok || !res.data) {
+        setAuthState('signedOut');
+        return;
+      }
+      await loadAll();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [db, loadAll]);
+
+  const handleSignIn = async (email, password) => {
+    setLoadError(null);
+    const res = await db.signIn(email, password);
+    if (!res.ok) return res.error?.message || 'Could not sign in.';
+    await loadAll();
+    return null;
+  };
+
+  const handleSignOut = async () => {
+    await db.signOut();
+    setHabits([]);
+    setHabitData({});
+    setTaskData({});
+    setJournalData({});
+    setDailyData({});
+    setWeightData({});
+    setAuthState('signedOut');
+  };
+
+  // Every mutation below is an explicit call. There are deliberately no
+  // "save the whole state" effects: a network write on every state change
+  // means a request per keystroke in the journal textarea.
+
+  const setWeightUnit = (weightUnit) => {
+    setSettings((prev) => ({ ...prev, weightUnit }));
+    db.saveSettings({ weightUnit });
+  };
+
+  // Each of these updates local state *and* fires exactly one network write.
+  // Local state stays the source of truth for rendering, so the UI does not
+  // wait on the network, and a slow connection never blocks typing.
+
+  const saveHabitDone = useCallback(
+    (habitId, day, done) => {
+      setHabitData((prev) => {
+        const forDay = { ...(prev[day] || {}) };
+        if (done) forDay[habitId] = true;
+        else delete forDay[habitId];
+        const next = { ...prev };
+        if (Object.keys(forDay).length === 0) delete next[day];
+        else next[day] = forDay;
+        return next;
+      });
+      db.setHabitDone(habitId, day, done);
+    },
+    [db]
+  );
+
+  const saveJournalEntry = useCallback(
+    (day, entry) => {
+      setJournalData((prev) => ({ ...prev, [day]: entry }));
+      db.upsertJournalEntry(day, entry);
+    },
+    [db]
+  );
+
+  const saveCheckIn = useCallback(
+    (day, entry) => {
+      setDailyData((prev) => ({ ...prev, [day]: entry }));
+      db.upsertCheckIn(day, entry);
+    },
+    [db]
+  );
+
+  const clearCheckIn = useCallback(
+    (day) => {
+      setDailyData((prev) => {
+        const next = { ...prev };
+        delete next[day];
+        return next;
+      });
+      db.clearCheckIn(day);
+    },
+    [db]
+  );
+
+  const saveWeight = useCallback(
+    (day, kg) => {
+      setWeightData((prev) => ({ ...prev, [day]: { kg, savedAt: Date.now() } }));
+      db.upsertWeight(day, kg);
+    },
+    [db]
+  );
+
+  const clearWeight = useCallback(
+    (day) => {
+      setWeightData((prev) => {
+        const next = { ...prev };
+        delete next[day];
+        return next;
+      });
+      db.clearWeight(day);
+    },
+    [db]
+  );
+
+  const saveTask = useCallback(
+    (task) => {
+      setTaskData((prev) => {
+        const list = prev[task.areaId] || [];
+        const exists = list.some((t) => t.id === task.id);
+        return {
+          ...prev,
+          [task.areaId]: exists
+            ? list.map((t) => (t.id === task.id ? task : t))
+            : [...list, task]
+        };
+      });
+      db.createTask(task);
+    },
+    [db]
+  );
+
+  const deleteTask = useCallback(
+    (id) => {
+      setTaskData((prev) => {
+        const next = {};
+        for (const [areaId, list] of Object.entries(prev)) {
+          next[areaId] = list.filter((t) => t.id !== id);
         }
         return next;
       });
-    }
-
-    setHabits(habits);
-    setHabitData(loaded.habitData || {});
-    setTaskData(migratedTaskData);
-    setJournalData(loaded.journalData || {});
-    setDailyData(loaded.dailyData || {});
-
-    if (habits !== loaded.habits) storage.saveHabits(habits);
-    if (didMigrate) storage.saveTaskData(migratedTaskData);
-    setHydrated(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (hydrated) storage.saveHabits(habits);
-  }, [habits, hydrated]);
-  useEffect(() => {
-    if (hydrated) storage.saveHabitData(habitData);
-  }, [habitData, hydrated]);
-  useEffect(() => {
-    if (hydrated) storage.saveTaskData(taskData);
-  }, [taskData, hydrated]);
-  useEffect(() => {
-    if (hydrated) storage.saveJournalData(journalData);
-  }, [journalData, hydrated]);
-  useEffect(() => {
-    if (hydrated) storage.saveDailyData(dailyData);
-  }, [dailyData, hydrated]);
+      db.deleteTask(id);
+    },
+    [db]
+  );
 
   const today = todayKey();
 
   // Clamp viewing date — never let it slip into the future.
   const safeViewingDate =
     viewingDate > today ? today : viewingDate;
+
+  if (authState === 'checking') {
+    return (
+      <div className="app">
+        <main className="main">
+          <BootScreen />
+        </main>
+      </div>
+    );
+  }
+
+  if (authState === 'signedOut') {
+    return (
+      <div className="app">
+        <main className="main">
+          <SignInScreen
+            onSignIn={handleSignIn}
+            error={loadError}
+            configured={isConfigured}
+          />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -125,7 +394,20 @@ export default function App() {
         viewingDate={safeViewingDate}
         setViewingDate={setViewingDate}
         today={today}
+        onSignOut={handleSignOut}
       />
+      {saveError && (
+        <div className="save-error-banner" role="alert">
+          <span className="save-error-text">{saveError}</span>
+          <button
+            type="button"
+            className="save-error-dismiss"
+            onClick={() => setSaveError(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       <main className="main">
         {view === 'habits' && (
           <HabitsView
@@ -134,7 +416,7 @@ export default function App() {
             today={today}
             viewingDate={safeViewingDate}
             setViewingDate={setViewingDate}
-            setHabitData={setHabitData}
+            onToggleHabit={saveHabitDone}
           />
         )}
         {view === 'areas' && (
@@ -143,12 +425,14 @@ export default function App() {
             setActiveAreaId={setActiveAreaId}
             taskData={taskData}
             setTaskData={setTaskData}
+            onTaskSave={saveTask}
+            onTaskDelete={deleteTask}
           />
         )}
         {view === 'journal' && (
           <JournalView
             journalData={journalData}
-            setJournalData={setJournalData}
+            onSaveEntry={saveJournalEntry}
             viewingDate={safeViewingDate}
             setViewingDate={setViewingDate}
             today={today}
@@ -157,7 +441,6 @@ export default function App() {
         {view === 'daily' && (
           <DailyView
             dailyData={dailyData}
-            setDailyData={setDailyData}
             taskData={taskData}
             habitData={habitData}
             habits={habits}
@@ -170,6 +453,13 @@ export default function App() {
               setView('areas');
             }}
             onOpenJournal={() => setView('journal')}
+            onSaveCheckIn={saveCheckIn}
+            onClearCheckIn={clearCheckIn}
+            onSaveWeight={saveWeight}
+            onClearWeight={clearWeight}
+            weightData={weightData}
+            weightUnit={settings.weightUnit}
+            setWeightUnit={setWeightUnit}
           />
         )}
       </main>
@@ -181,7 +471,14 @@ export default function App() {
 // Header
 // ----------------------------------------------------------------------------
 
-function Header({ view, setView, viewingDate, setViewingDate, today }) {
+function Header({
+  view,
+  setView,
+  viewingDate,
+  setViewingDate,
+  today,
+  onSignOut
+}) {
   const isToday = viewingDate === today;
   const dateInputRef = useRef(null);
 
@@ -211,6 +508,13 @@ function Header({ view, setView, viewingDate, setViewingDate, today }) {
       <nav className="topnav" aria-label="Primary">
         <button
           type="button"
+          className={`nav-pill ${view === 'daily' ? 'is-active' : ''}`}
+          onClick={() => setView('daily')}
+        >
+          Daily
+        </button>
+        <button
+          type="button"
           className={`nav-pill ${view === 'habits' ? 'is-active' : ''}`}
           onClick={() => setView('habits')}
         >
@@ -229,13 +533,6 @@ function Header({ view, setView, viewingDate, setViewingDate, today }) {
           onClick={() => setView('journal')}
         >
           Journal
-        </button>
-        <button
-          type="button"
-          className={`nav-pill ${view === 'daily' ? 'is-active' : ''}`}
-          onClick={() => setView('daily')}
-        >
-          Daily
         </button>
       </nav>
       <div className="header-meta">
@@ -288,6 +585,14 @@ function Header({ view, setView, viewingDate, setViewingDate, today }) {
             ← Today
           </button>
         )}
+        <button
+          type="button"
+          className="today-btn signout-btn"
+          onClick={onSignOut}
+          title="Sign out"
+        >
+          Sign out
+        </button>
       </div>
     </header>
   );
@@ -313,7 +618,7 @@ function HabitsView({
   today,
   viewingDate,
   setViewingDate,
-  setHabitData
+  onToggleHabit
 }) {
   const currentYear = Number(today.slice(0, 4));
   const [year, setYear] = useState(currentYear);
@@ -338,14 +643,7 @@ function HabitsView({
 
   const toggleHabit = (habitId, dateKey) => {
     if (dateKey > today) return; // future
-    setHabitData((prev) => {
-      const day = { ...(prev[dateKey] || {}) };
-      day[habitId] = !day[habitId];
-      const next = { ...prev, [dateKey]: day };
-      // Clean up empty days to keep storage tidy.
-      if (Object.keys(day).length === 0) delete next[dateKey];
-      return next;
-    });
+    onToggleHabit(habitId, dateKey, !habitData[dateKey]?.[habitId]);
   };
 
   const jumpToDay = (dateKey) => {
@@ -396,12 +694,16 @@ function HabitsView({
 
       <YearHeatmap
         grid={grid}
-        habitData={habitData}
-        habitTotal={habits.length}
         today={today}
-        viewingDate={viewingDate}
-        onJumpToDay={jumpToDay}
         year={year}
+        levelFor={(k) =>
+          levelFromCount(countCompleted(habitData[k]), habits.length)
+        }
+        tipFor={(k) => [
+          `${countCompleted(habitData[k])} / ${habits.length} completed`
+        ]}
+        onSelect={jumpToDay}
+        legendHint="· click any day to open it"
       />
 
       <YearStats stats={yearStats} year={year} />
@@ -472,10 +774,6 @@ function buildYearGrid(year) {
   return { cells, cols, year, firstDate: start, lastDate: dec31 };
 }
 
-function pad2(n) {
-  return String(n).padStart(2, '0');
-}
-
 // Count consecutive days ending at (or before) `todayKey` where habitId is true.
 // If today isn't done, the streak still ends on the most recent run.
 function computeStreak(habitData, habitId, todayKeyStr) {
@@ -543,7 +841,10 @@ function computeYearStats(habitData, grid, habitTotal, todayKeyStr) {
 // Year heatmap
 // ----------------------------------------------------------------------------
 
-function YearHeatmap({ grid, habitData, habitTotal, today, onToggle, year }) {
+// One GitHub-style year grid, reused by Habits and Daily Check-ins.
+// `levelFor(key)` returns 0-4 (0 = no data). `tipFor(key)` returns the
+// tooltip lines, which also become the cell's aria-label.
+function YearHeatmap({ grid, today, year, levelFor, tipFor, onSelect, legendHint, tipClassName }) {
   const [hovered, setHovered] = useState(null); // { key, x, y }
 
   // Month label per column = first in-year cell whose month starts in that col.
@@ -585,8 +886,8 @@ function YearHeatmap({ grid, habitData, habitTotal, today, onToggle, year }) {
             style={{ gridTemplateColumns: `repeat(${grid.cols}, var(--cell))` }}
           >
             {grid.cells.map((c, i) => {
-              const completed = countCompleted(habitData[c.key]);
-              const level = levelFromCount(completed, habitTotal);
+              const level = levelFor(c.key);
+              const lines = tipFor(c.key);
               const isToday = i === todayCellIdx;
               const isFuture = c.key > today;
               const className = [
@@ -604,11 +905,12 @@ function YearHeatmap({ grid, habitData, habitTotal, today, onToggle, year }) {
                   type="button"
                   className={className}
                   disabled={isFuture || !c.inYear}
-                  aria-label={`${c.key} · ${completed} of ${habitTotal}`}
+                  aria-label={
+                    lines.length ? `${c.key} · ${lines.join(' · ')}` : c.key
+                  }
                   onMouseEnter={(e) =>
                     setHovered({
                       key: c.key,
-                      completed,
                       x: e.clientX,
                       y: e.clientY
                     })
@@ -622,15 +924,15 @@ function YearHeatmap({ grid, habitData, habitTotal, today, onToggle, year }) {
                   onFocus={(e) =>
                     setHovered({
                       key: c.key,
-                      completed,
                       x: e.currentTarget.getBoundingClientRect().left,
                       y: e.currentTarget.getBoundingClientRect().top
                     })
                   }
                   onBlur={() => setHovered(null)}
                   onClick={() => {
-                    // No-op: toggling happens on the habit list below.
-                    // The cell stays keyboard-focusable for accessibility.
+                    // Toggling habits happens in the list below; here a
+                    // click only navigates to that day.
+                    if (onSelect) onSelect(c.key);
                   }}
                 />
               );
@@ -645,12 +947,12 @@ function YearHeatmap({ grid, habitData, habitTotal, today, onToggle, year }) {
           <span key={lvl} className={`legend-cell lvl-${lvl}`} />
         ))}
         <span className="legend-label">more</span>
-        <span className="legend-hint">· click any day to open it</span>
+        {legendHint && <span className="legend-hint">{legendHint}</span>}
       </div>
 
       {hovered && (
         <div
-          className="heatmap-tip"
+          className={tipClassName ? `heatmap-tip ${tipClassName}` : 'heatmap-tip'}
           style={{
             left: hovered.x,
             top: hovered.y
@@ -658,9 +960,11 @@ function YearHeatmap({ grid, habitData, habitTotal, today, onToggle, year }) {
           role="tooltip"
         >
           <div className="tip-date">{formatDate(hovered.key)}</div>
-          <div className="tip-count">
-            {hovered.completed} / {habitTotal} completed
-          </div>
+          {tipFor(hovered.key).map((line) => (
+            <div key={line} className="tip-count">
+              {line}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -679,6 +983,59 @@ function levelFromCount(count, total) {
   if (ratio <= 0.4) return 2;
   if (ratio <= 0.7) return 3;
   return 4;
+}
+
+// Vibe is an absolute 0-100 score, not a ratio, so it gets its own bands.
+// Darker always means better, matching the habits ramp.
+function levelFromVibe(vibe) {
+  if (vibe == null) return 0;
+  if (vibe <= 25) return 1;
+  if (vibe <= 50) return 2;
+  if (vibe <= 75) return 3;
+  return 4;
+}
+
+// A day counts as "written" if it has any text or a mood. Days you never
+// wrote on and days you skipped look identical on the graph — deliberately,
+// since there is nothing useful to distinguish between them.
+function hasJournalEntry(journalData, key) {
+  const e = journalData[key];
+  if (!e) return false;
+  return !!(e.text || '').trim() || !!e.mood;
+}
+
+// Journal presence is binary: every written day gets the same level, so the
+// grid shows that you showed up without ranking one day above another.
+const JOURNAL_PRESENT_LEVEL = 3;
+
+function journalLevel(journalData, key) {
+  return hasJournalEntry(journalData, key) ? JOURNAL_PRESENT_LEVEL : 0;
+}
+
+const JOURNAL_PREVIEW_CHARS = 90;
+
+// Tooltip lines for a day. Also the cell's aria-label.
+function journalTipLines(journalData, key) {
+  const e = journalData[key];
+  if (!hasJournalEntry(journalData, key)) return ['No entry'];
+  const out = [];
+  if (e.mood) {
+    const m = MOODS.find((x) => x.id === e.mood);
+    if (m) out.push(`${m.emoji} ${m.label}`);
+  }
+  if (e.tags && e.tags.length > 0) {
+    const names = e.tags.map((id) => AREA_BY_ID[id]?.name).filter(Boolean);
+    if (names.length > 0) out.push(names.join(' · '));
+  }
+  const body = (e.text || '').replace(/\s+/g, ' ').trim();
+  if (body) {
+    out.push(
+      body.length > JOURNAL_PREVIEW_CHARS
+        ? `"${body.slice(0, JOURNAL_PREVIEW_CHARS).trimEnd()}…"`
+        : `"${body}"`
+    );
+  }
+  return out.length > 0 ? out : ['No text'];
 }
 
 // ----------------------------------------------------------------------------
@@ -744,7 +1101,9 @@ function AreasView({
   activeAreaId,
   setActiveAreaId,
   taskData,
-  setTaskData
+  setTaskData,
+  onTaskSave,
+  onTaskDelete
 }) {
   const isAll = activeAreaId === 'all';
   const [drawerState, setDrawerState] = useState(null);
@@ -764,8 +1123,9 @@ function AreasView({
     return out;
   }, [taskData]);
 
-  // setTasks callback for the panel — works on the aggregated list and
-  // splits the result back into taskData by areaId.
+  // setTasks works on the aggregated list and splits the result back into
+  // taskData by areaId. Local state only — each caller is responsible for
+  // persisting, so there is exactly one network write per user action.
   const setTasks = (updater) => {
     setTaskData((prev) => {
       const current = [];
@@ -871,6 +1231,8 @@ function AreasView({
           defaultNewTaskAreaId={defaultNewTaskAreaId}
           tasks={visibleTasks}
           setTasks={setTasks}
+          onTaskPersist={onTaskSave}
+          onTaskDelete={onTaskDelete}
           onCreate={openCreate}
           onEdit={openEdit}
         />
@@ -887,17 +1249,17 @@ function AreasView({
         initialAreaId={defaultNewTaskAreaId}
         isAll={isAll}
         onClose={closeDrawer}
-        onSave={(taskData) => {
+        onSave={(task) => {
           if (drawerState?.mode === 'create') {
-            setTasks((prev) => [...prev, taskData]);
+            setTasks((prev) => [...prev, task]);
           } else {
-            setTasks((prev) =>
-              prev.map((t) => (t.id === taskData.id ? taskData : t))
-            );
+            setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
           }
+          onTaskSave(task);
         }}
         onDelete={(id) => {
           setTasks((prev) => prev.filter((t) => t.id !== id));
+          onTaskDelete(id);
         }}
       />
     </section>
@@ -909,25 +1271,38 @@ function TaskPanel({
   defaultNewTaskAreaId,
   tasks,
   setTasks,
+  onTaskPersist,
+  onTaskDelete,
   onCreate,
   onEdit
 }) {
   const newArea = AREA_BY_ID[defaultNewTaskAreaId] || AREAS[0];
 
+  // A status change is a real edit, so it goes to the database too.
   const setStatus = (id, newStatus) => {
+    const now = Date.now();
     setTasks((prev) =>
       prev.map((t) => {
         if (t.id !== id) return t;
-        const now = Date.now();
         const completedAt =
           newStatus === 'done' ? t.completedAt || now : null;
         return { ...t, status: newStatus, completedAt, modifiedAt: now };
       })
     );
+    const current = tasks.find((t) => t.id === id);
+    if (current) {
+      onTaskPersist({
+        ...current,
+        status: newStatus,
+        completedAt: newStatus === 'done' ? current.completedAt || now : null,
+        modifiedAt: now
+      });
+    }
   };
 
   const deleteTask = (id) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
+    onTaskDelete(id);
   };
 
   const active = tasks.filter(
@@ -1591,7 +1966,7 @@ function TaskDrawer({
 
 function JournalView({
   journalData,
-  setJournalData,
+  onSaveEntry,
   viewingDate,
   setViewingDate,
   today
@@ -1601,7 +1976,11 @@ function JournalView({
   const [draftTags, setDraftTags] = useState([]);
   const [draftText, setDraftText] = useState('');
   const [savedAt, setSavedAt] = useState(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const currentYear = Number(today.slice(0, 4));
+  const [graphYear, setGraphYear] = useState(currentYear);
+
+  // Year grid behind the presence graph.
+  const graphGrid = useMemo(() => buildYearGrid(graphYear), [graphYear]);
 
   const mood = draftMood;
   const tags = draftTags;
@@ -1634,36 +2013,73 @@ function JournalView({
       text: draftText.trim(),
       savedAt: Date.now()
     };
-    setJournalData((prev) => ({ ...prev, [viewingDate]: entry }));
+    onSaveEntry(viewingDate, entry);
     const stamp = entry.savedAt;
     setSavedAt(stamp);
-    setDrawerOpen(false);
     setTimeout(() => setSavedAt((v) => (v === stamp ? null : v)), 2400);
   };
 
-  // Past = all saved entries other than the current draft date.
-  const past = Object.entries(journalData)
-    .filter(
-      ([d, e]) => e && (e.text || e.mood) && d !== viewingDate
-    )
-    .sort(([a], [b]) => (a < b ? 1 : -1));
-
   return (
     <section className="journal-view">
+      <div className="journal-graph">
+        <header className="year-header journal-graph-header">
+          <div>
+            <div className="year-eyebrow">Entries by day</div>
+            <h2 className="section-title daily-graph-title">{graphYear}</h2>
+          </div>
+          <div className="year-nav">
+            <button
+              type="button"
+              className="year-nav-btn"
+              onClick={() => setGraphYear((y) => y - 1)}
+              aria-label="Previous year"
+            >
+              ←
+            </button>
+            {graphYear !== currentYear && (
+              <button
+                type="button"
+                className="year-today-btn"
+                onClick={() => setGraphYear(currentYear)}
+              >
+                Today
+              </button>
+            )}
+            <button
+              type="button"
+              className="year-nav-btn"
+              onClick={() => setGraphYear((y) => Math.min(currentYear, y + 1))}
+              disabled={graphYear >= currentYear}
+              aria-label="Next year"
+            >
+              →
+            </button>
+          </div>
+        </header>
+        <YearHeatmap
+          grid={graphGrid}
+          today={today}
+          year={graphYear}
+          // Binary on purpose: every written day looks the same, so the grid
+          // shows presence without ranking one day above another.
+          levelFor={(k) => journalLevel(journalData, k)}
+          tipFor={(k) => journalTipLines(journalData, k)}
+          onSelect={(k) => {
+            setViewingDate(k);
+            setGraphYear(Number(k.slice(0, 4)));
+          }}
+          legendHint="· click any day to open it"
+          tipClassName="heatmap-tip-wrap-text"
+        />
+      </div>
+
       <div className="journal-editor">
         <header className="section-header journal-header">
           <div>
             <div className="section-eyebrow">Reflect</div>
             <h1 className="section-title-lg">Journal</h1>
           </div>
-          <button
-            type="button"
-            className="entry-toggle"
-            onClick={() => setDrawerOpen((v) => !v)}
-            aria-expanded={drawerOpen}
-          >
-            {drawerOpen ? 'Hide past' : `Past · ${past.length}`}
-          </button>
+          <span className="section-meta">{formatDate(viewingDate)}</span>
         </header>
 
         <div className="journal-controls">
@@ -1740,72 +2156,7 @@ function JournalView({
           )}
         </div>
       </div>
-
-      {drawerOpen && (
-        <aside className="journal-past">
-          <header className="section-header journal-past-header">
-            <h2 className="section-title">Past entries</h2>
-            <span className="section-meta">
-              {past.length} {past.length === 1 ? 'entry' : 'entries'}
-            </span>
-          </header>
-          <div className="journal-past-list">
-            {past.length === 0 && (
-              <div className="empty-state">
-                <div className="empty-icon">·</div>
-                <div className="empty-title">No past entries</div>
-                <div className="empty-sub">
-                  Pick another date to start a new one.
-                </div>
-              </div>
-            )}
-            {past.map(([d, e]) => (
-              <JournalCard key={d} dateKey={d} entry={e} />
-            ))}
-          </div>
-        </aside>
-      )}
     </section>
-  );
-}
-
-function JournalCard({ dateKey, entry }) {
-  const moodObj = MOODS.find((m) => m.id === entry.mood);
-  const preview = entry.text
-    ? entry.text.length > 200
-      ? entry.text.slice(0, 200) + '…'
-      : entry.text
-    : '(no text)';
-  return (
-    <article className="journal-card">
-      <div className="journal-card-top">
-        <span className="journal-card-date">{formatDate(dateKey)}</span>
-        {moodObj && (
-          <span className="journal-card-mood">
-            <span className="mood-emoji">{moodObj.emoji}</span>
-            <span className="mood-label">{moodObj.label}</span>
-          </span>
-        )}
-      </div>
-      {entry.tags && entry.tags.length > 0 && (
-        <div className="journal-card-tags">
-          {entry.tags.map((tid) => {
-            const a = AREA_BY_ID[tid];
-            if (!a) return null;
-            return (
-              <span
-                key={tid}
-                className="journal-card-tag"
-                style={{ color: a.color, borderColor: a.color }}
-              >
-                {a.name}
-              </span>
-            );
-          })}
-        </div>
-      )}
-      <p className="journal-card-preview">{preview}</p>
-    </article>
   );
 }
 
@@ -1856,7 +2207,6 @@ function metricLabel(value, labels) {
 
 function DailyView({
   dailyData,
-  setDailyData,
   taskData,
   habitData,
   habits,
@@ -1865,13 +2215,24 @@ function DailyView({
   setViewingDate,
   today,
   onOpenTask,
-  onOpenJournal
+  onOpenJournal,
+  onSaveCheckIn,
+  onClearCheckIn,
+  onSaveWeight,
+  onClearWeight,
+  weightData,
+  weightUnit,
+  setWeightUnit
 }) {
   const [checkInOpen, setCheckInOpen] = useState(false);
-  const [pastOpen, setPastOpen] = useState(false);
+  const currentYear = Number(today.slice(0, 4));
+  const [graphYear, setGraphYear] = useState(currentYear);
 
   const entry = dailyData[viewingDate] || null;
   const vibeInfo = entry?.vibe != null ? HAWKINS_BY_VALUE[entry.vibe] : null;
+
+  // Year grid behind the check-in graph.
+  const graphGrid = useMemo(() => buildYearGrid(graphYear), [graphYear]);
 
   // Aggregate tasks across all areas for the deadline overview.
   const allTasks = useMemo(() => {
@@ -1933,15 +2294,32 @@ function DailyView({
     ? MOODS.find((m) => m.id === journalEntry.mood)
     : null;
 
-  // Past check-ins.
-  const past = Object.entries(dailyData)
-    .filter(
-      ([d, e]) =>
-        e &&
-        (e.vibe != null || e.stress != null || e.energy != null) &&
-        d !== viewingDate
-    )
-    .sort(([a], [b]) => (a < b ? 1 : -1));
+  // ---- Weight ------------------------------------------------------------
+  // One reading per day, stored in kg regardless of display unit.
+  const weightForDate = weightData[viewingDate] || null;
+  const weightKg = weightForDate?.kg ?? null;
+  const series = useMemo(() => weightSeries(weightData), [weightData]);
+  const meanSeries = useMemo(() => rollingMean(series), [series]);
+  const changeAllTime = useMemo(() => totalChange(series), [series]);
+  const ratePerWeek = useMemo(() => weeklyRate(series), [series]);
+
+  // Tooltip lines for a day's check-in. Also the cell's aria-label.
+  const tipForDay = (key) => {
+    const e = dailyData[key];
+    if (!e || (e.vibe == null && e.stress == null && e.energy == null)) {
+      return ['No check-in'];
+    }
+    const out = [];
+    if (e.vibe != null) {
+      const v = HAWKINS_BY_VALUE[e.vibe];
+      out.push(v ? `Vibe ${v.value} · ${v.name}` : `Vibe ${e.vibe}`);
+    }
+    if (e.stress != null)
+      out.push(`Stress ${e.stress} · ${metricLabel(e.stress, STRESS_LABELS)}`);
+    if (e.energy != null)
+      out.push(`Energy ${e.energy} · ${metricLabel(e.energy, ENERGY_LABELS)}`);
+    return out;
+  };
 
   const tomorrowKey = addDays(viewingDate, 1);
   const isToday = viewingDate === today;
@@ -1954,6 +2332,55 @@ function DailyView({
 
   return (
     <section className="daily-view">
+      <div className="daily-graph">
+        <header className="year-header daily-graph-header">
+          <div>
+            <div className="year-eyebrow">Check-in year</div>
+            <h2 className="section-title daily-graph-title">{graphYear}</h2>
+          </div>
+          <div className="year-nav">
+            <button
+              type="button"
+              className="year-nav-btn"
+              onClick={() => setGraphYear((y) => y - 1)}
+              aria-label="Previous year"
+            >
+              ←
+            </button>
+            {graphYear !== currentYear && (
+              <button
+                type="button"
+                className="year-today-btn"
+                onClick={() => setGraphYear(currentYear)}
+              >
+                Today
+              </button>
+            )}
+            <button
+              type="button"
+              className="year-nav-btn"
+              onClick={() => setGraphYear((y) => Math.min(currentYear, y + 1))}
+              disabled={graphYear >= currentYear}
+              aria-label="Next year"
+            >
+              →
+            </button>
+          </div>
+        </header>
+        <YearHeatmap
+          grid={graphGrid}
+          today={today}
+          year={graphYear}
+          levelFor={(k) => levelFromVibe(dailyData[k]?.vibe)}
+          tipFor={tipForDay}
+          onSelect={(k) => {
+            setViewingDate(k);
+            setGraphYear(Number(k.slice(0, 4)));
+          }}
+          legendHint="· click any day to open it"
+        />
+      </div>
+
       <div className="daily-overview">
         <header className="section-header daily-overview-header">
           <div>
@@ -1984,14 +2411,6 @@ function DailyView({
                 ← Today
               </button>
             )}
-            <button
-              type="button"
-              className="entry-toggle"
-              onClick={() => setPastOpen((v) => !v)}
-              aria-expanded={pastOpen}
-            >
-              {pastOpen ? 'Hide past' : `Past · ${past.length}`}
-            </button>
           </div>
         </header>
 
@@ -2029,11 +2448,36 @@ function DailyView({
                 {entry?.energy != null ? `${entry.energy} · ${metricLabel(entry.energy, ENERGY_LABELS)}` : '—'}
               </span>
             </div>
+            {/* Change is week-over-week and all-time, never day-over-day:
+                day-to-day movement is mostly water and would be misleading. */}
+            <div className="daily-checkin-meta-item">
+              <span className="daily-checkin-meta-key">weight</span>
+              <span className="daily-checkin-meta-value">
+                {weightKg != null ? formatWeight(weightKg, weightUnit) : '—'}
+              </span>
+            </div>
+            <div className="daily-checkin-meta-item">
+              <span className="daily-checkin-meta-key">change</span>
+              <span className="daily-checkin-meta-value">
+                {changeAllTime != null ? `${formatDelta(changeAllTime, weightUnit)} all` : '—'}
+                {ratePerWeek != null && ` · ${formatDelta(ratePerWeek, weightUnit)}/wk`}
+              </span>
+            </div>
           </div>
           <span className="daily-checkin-edit">
             {entry ? 'Edit' : 'Log →'}
           </span>
         </button>
+
+        {/* Weight trend: raw readings behind a 7-day mean */}
+        <WeightChart
+          series={series}
+          meanSeries={meanSeries}
+          changeAllTime={changeAllTime}
+          ratePerWeek={ratePerWeek}
+          unit={weightUnit}
+          onUnitChange={setWeightUnit}
+        />
 
         {/* Habits today mini-summary */}
         <button
@@ -2140,78 +2584,23 @@ function DailyView({
         )}
       </div>
 
-      {pastOpen && (
-        <aside className="daily-past">
-          <header className="section-header daily-past-header">
-            <h2 className="section-title">Past check-ins</h2>
-            <span className="section-meta">
-              {past.length} {past.length === 1 ? 'entry' : 'entries'}
-            </span>
-          </header>
-          <div className="daily-past-list">
-            {past.length === 0 && (
-              <div className="empty-state">
-                <div className="empty-icon">·</div>
-                <div className="empty-title">No past check-ins</div>
-                <div className="empty-sub">
-                  Pick another date to start a new one.
-                </div>
-              </div>
-            )}
-            {past.map(([d, e]) => {
-              const vObj = e.vibe != null ? HAWKINS_BY_VALUE[e.vibe] : null;
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  className="daily-past-card"
-                  onClick={() => setViewingDate(d)}
-                >
-                  <div className="daily-past-date">{formatDate(d)}</div>
-                  <div className="daily-past-metrics">
-                    <div className="daily-past-metric">
-                      <span
-                        className="daily-past-swatch"
-                        style={{
-                          backgroundColor: vObj
-                            ? vObj.color
-                            : 'transparent',
-                          borderColor: vObj
-                            ? vObj.color
-                            : 'var(--border)'
-                        }}
-                      />
-                      <span>{vObj ? vObj.name : '—'}</span>
-                    </div>
-                    <div className="daily-past-meta">
-                      <span>S {e.stress ?? '—'}</span>
-                      <span>E {e.energy ?? '—'}</span>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </aside>
-      )}
-
       <CheckInDrawer
         open={checkInOpen}
         onClose={() => setCheckInOpen(false)}
         entry={entry}
         dateKey={viewingDate}
         onSave={(newEntry) => {
-          setDailyData((prev) => ({ ...prev, [viewingDate]: newEntry }));
+          onSaveCheckIn(viewingDate, newEntry);
           setCheckInOpen(false);
         }}
         onClear={() => {
-          setDailyData((prev) => {
-            const next = { ...prev };
-            delete next[viewingDate];
-            return next;
-          });
+          onClearCheckIn(viewingDate);
           setCheckInOpen(false);
         }}
+        weightEntry={weightForDate}
+        weightUnit={weightUnit}
+        onSaveWeight={(kg) => onSaveWeight(viewingDate, kg)}
+        onClearWeight={() => onClearWeight(viewingDate)}
       />
     </section>
   );
@@ -2297,17 +2686,225 @@ function DeadlineSection({
 // Check-in drawer — slide-in panel for the daily vibe / stress / energy
 // ----------------------------------------------------------------------------
 
-function CheckInDrawer({ open, onClose, entry, dateKey, onSave, onClear }) {
+// ----------------------------------------------------------------------------
+// Weight — raw daily readings behind a 7-day moving mean
+// ----------------------------------------------------------------------------
+
+// The y-domain is deliberately not anchored at zero. A zero-based axis would
+// flatten a real 2 kg loss into a straight line; a tightly auto-fitted one
+// would render the same loss as a cliff. Pad the actual data range instead,
+// and only widen it if the spread is too small to show any shape at all.
+function weightDomain(values) {
+  if (values.length === 0) return [0, 1];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min;
+  // Floor the span so a very steady week still shows some movement.
+  const padded = Math.max(span * 1.35, span + 0.6, 1);
+  const mid = (max + min) / 2;
+  return [mid - padded / 2, mid + padded / 2];
+}
+
+function WeightChart({
+  series,
+  meanSeries,
+  changeAllTime,
+  ratePerWeek,
+  unit,
+  onUnitChange
+}) {
+  // Metric in kg; imperial plotted in lb. A stones axis would need ~0.5 st
+  // steps (7 lb), far too coarse to show a 1 lb weekly change, so the axis
+  // uses the smaller natural unit and the st·lb compound appears in the
+  // readout, tooltip and input instead.
+  const toPlot = (kg) => (unit === 'stlb' ? kgToLb(kg) : kg);
+  const axisUnit = unit === 'stlb' ? 'lb' : 'kg';
+
+  const raw = series.map((p) => ({ key: p.key, y: toPlot(p.kg) }));
+  const meanLookup = {};
+  for (const p of meanSeries) meanLookup[p.key] = toPlot(p.mean);
+  // Recharts wants one dataset per chart, with each series reading a key
+  // from it. Days with no mean are null so the line can span them.
+  const chartData = raw.map((p) => ({
+    key: p.key,
+    reading: p.y,
+    mean: meanLookup[p.key] ?? null
+  }));
+  const domain = weightDomain([...raw.map((p) => p.y), ...meanSeries.map((p) => toPlot(p.mean))]);
+
+  const firstKey = series.length > 0 ? series[0].key : null;
+
+  return (
+    <section className="weight-card">
+      <header className="weight-card-head">
+        <div>
+          <span className="control-label">Weight</span>
+          <div className="weight-card-figures">
+            <span className="weight-card-change">
+              {changeAllTime != null ? formatDelta(changeAllTime, unit) : '—'}
+            </span>
+            <span className="weight-card-change-sub">
+              {changeAllTime != null
+                ? `since ${formatDate(firstKey)}`
+                : 'log a few days to see a trend'}
+            </span>
+            {ratePerWeek != null && (
+              <span className="weight-card-rate">
+                {formatDelta(ratePerWeek, unit)}/wk
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="weight-unit-toggle" role="group" aria-label="Weight unit">
+          {WEIGHT_UNITS.map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              className={`weight-unit-btn ${unit === u.id ? 'is-active' : ''}`}
+              onClick={() => onUnitChange && onUnitChange(u.id)}
+              aria-pressed={unit === u.id}
+            >
+              {u.label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      {raw.length === 0 ? (
+        <div className="weight-empty">
+          <div className="empty-icon">○</div>
+          <div className="empty-title">No weigh-ins yet</div>
+          <div className="empty-sub">
+            Log your morning weight in the check-in and it will appear here.
+          </div>
+        </div>
+      ) : (
+        <div className="weight-chart-wrap">
+          <ResponsiveContainer width="100%" height={220}>
+            <ComposedChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>
+              <CartesianGrid stroke="var(--border)" vertical={false} />
+              <XAxis
+                dataKey="key"
+                type="category"
+                interval="preserveStartEnd"
+                tickCount={6}
+                tickFormatter={(k) => formatDate(k)}
+                tick={{ fontSize: 10, fill: 'var(--text-faint)' }}
+                stroke="var(--border)"
+              />
+              <YAxis
+                domain={domain}
+                tick={{ fontSize: 10, fill: 'var(--text-faint)' }}
+                stroke="var(--border)"
+                width={52}
+                tickFormatter={(v) => `${Math.round(v * 10) / 10} ${axisUnit}`}
+              />
+              <Tooltip
+                content={<WeightTooltip unit={unit} />}
+                cursor={{ stroke: 'var(--border-strong)' }}
+              />
+              {/* Raw readings: faint, because day-to-day movement is noise. */}
+              <Scatter
+                dataKey="reading"
+                name="reading"
+                fill="var(--text-faint)"
+                fillOpacity={0.5}
+                shape="circle"
+                r={2}
+                isAnimationActive={false}
+              />
+              {/* 7-day mean: the actual signal. connectNulls so a gap reads as
+                  a continuing trend rather than a break. */}
+              <Line
+                dataKey="mean"
+                name="7-day mean"
+                stroke="var(--accent)"
+                strokeWidth={2}
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+          <div className="weight-legend" aria-hidden="true">
+            <span className="weight-legend-item">
+              <span className="weight-legend-dot" /> reading
+            </span>
+            <span className="weight-legend-item">
+              <span className="weight-legend-line" /> 7-day mean
+            </span>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WeightTooltip({ active, payload, label, unit }) {
+  if (!active || !payload || payload.length === 0) return null;
+  const reading = payload.find((p) => p.dataKey === 'reading');
+  const avg = payload.find((p) => p.dataKey === 'mean');
+  // Plotted values are in lb for imperial; weight.js stores and formats kg.
+  const toKg = (v) => (unit === 'stlb' ? lbToKg(v) : v);
+  return (
+    <div className="weight-tip">
+      <div className="tip-date">{formatDate(label)}</div>
+      <div className="tip-count">
+        {reading ? formatWeight(toKg(reading.value), unit) : 'No reading'}
+      </div>
+      {avg ? (
+        <div className="weight-tip-mean">
+          7-day mean {formatWeight(toKg(avg.value), unit)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CheckInDrawer({
+  open,
+  onClose,
+  entry,
+  dateKey,
+  onSave,
+  onClear,
+  weightEntry,
+  weightUnit,
+  onSaveWeight,
+  onClearWeight
+}) {
   const [vibe, setVibe] = useState(null);
   const [stress, setStress] = useState(null);
   const [energy, setEnergy] = useState(null);
+  // Weight lives in its own store, so it keeps its own draft state. Raw
+  // strings while typing so partial input like "7." is not clobbered.
+  const [wKg, setWKg] = useState('');
+  const [wSt, setWSt] = useState('');
+  const [wLb, setWLb] = useState('');
+
+  const initialWeightKg = weightEntry?.kg ?? null;
 
   useEffect(() => {
     if (!open) return;
     setVibe(entry?.vibe ?? null);
     setStress(entry?.stress ?? null);
     setEnergy(entry?.energy ?? null);
-  }, [open, entry]);
+    const kg = weightEntry?.kg ?? null;
+    if (kg == null) {
+      setWKg('');
+      setWSt('');
+      setWLb('');
+    } else if (weightUnit === 'stlb') {
+      const { st, lb } = kgToStonesLbs(kg);
+      setWSt(String(st));
+      setWLb(String(lb));
+      setWKg('');
+    } else {
+      setWKg(kg.toFixed(1));
+      setWSt('');
+      setWLb('');
+    }
+  }, [open, entry, weightEntry, weightUnit]);
 
   useEffect(() => {
     if (!open) return;
@@ -2318,16 +2915,43 @@ function CheckInDrawer({ open, onClose, entry, dateKey, onSave, onClear }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  const handleSave = () => {
-    if (vibe == null && stress == null && energy == null) {
-      onClose();
-      return;
+  // Parse the weight draft into kg, or null if it is blank or implausible.
+  const parseWeightKg = () => {
+    if (weightUnit === 'stlb') {
+      const st = wSt.trim() === '' ? 0 : parseInt(wSt, 10);
+      const lb = wLb.trim() === '' ? 0 : parseInt(wLb, 10);
+      if (wSt.trim() === '' && wLb.trim() === '') return null;
+      if (!Number.isFinite(st) || !Number.isFinite(lb) || st < 0 || lb < 0) return null;
+      // 14 lb or more carries into the next stone naturally.
+      return isPlausibleKg(stonesLbsToKg(st, lb)) ? stonesLbsToKg(st, lb) : null;
     }
-    onSave({ vibe, stress, energy, savedAt: Date.now() });
+    if (wKg.trim() === '') return null;
+    const n = parseFloat(wKg);
+    return isPlausibleKg(n) ? n : null;
+  };
+
+  const handleSave = () => {
+    const hasCheckin = vibe != null || stress != null || energy != null;
+    const kg = parseWeightKg();
+    const weightBlank = weightUnit === 'stlb'
+      ? wSt.trim() === '' && wLb.trim() === ''
+      : wKg.trim() === '';
+
+    // Weight saves independently of the check-in record, so you can weigh in
+    // without also logging a vibe.
+    if (kg != null) {
+      if (onSaveWeight) onSaveWeight(kg);
+    } else if (weightBlank && initialWeightKg != null) {
+      // Cleared a reading that existed: treat as a delete.
+      if (onClearWeight) onClearWeight();
+    }
+    if (hasCheckin && onSave) onSave({ vibe, stress, energy, savedAt: Date.now() });
+    onClose();
   };
 
   const handleClear = () => {
-    onClear && onClear();
+    if (onClear) onClear();
+    if (onClearWeight) onClearWeight();
   };
 
   const vibeInfo = vibe != null ? HAWKINS_BY_VALUE[vibe] : null;
@@ -2455,14 +3079,76 @@ function CheckInDrawer({ open, onClose, entry, dateKey, onSave, onClear }) {
                 >
                   {n}
                 </button>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+
+          {/* Weight — its own store, saved independently of the check-in */}
+          <div className="task-drawer-field">
+            <div className="daily-field-head">
+              <span className="task-drawer-label">Weight</span>
+              <span className="daily-field-meta">
+                {initialWeightKg != null
+                  ? formatWeight(initialWeightKg, weightUnit)
+                  : 'not set'}
+              </span>
+            </div>
+            {weightUnit === 'stlb' ? (
+              <div className="weight-input-row">
+                <label className="weight-input-group">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    step="1"
+                    className="task-drawer-input weight-input"
+                    value={wSt}
+                    onChange={(e) => setWSt(e.target.value)}
+                    placeholder="0"
+                    aria-label="Weight in stones"
+                  />
+                  <span className="weight-input-suffix">st</span>
+                </label>
+                <label className="weight-input-group">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    max="13"
+                    step="1"
+                    className="task-drawer-input weight-input"
+                    value={wLb}
+                    onChange={(e) => setWLb(e.target.value)}
+                    placeholder="0"
+                    aria-label="Weight in pounds"
+                  />
+                  <span className="weight-input-suffix">lb</span>
+                </label>
+              </div>
+            ) : (
+              <label className="weight-input-group">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={MIN_KG}
+                  max={MAX_KG}
+                  step="0.1"
+                  className="task-drawer-input weight-input"
+                  value={wKg}
+                  onChange={(e) => setWKg(e.target.value)}
+                  placeholder="0.0"
+                  aria-label="Weight in kilograms"
+                />
+                <span className="weight-input-suffix">kg</span>
+              </label>
+            )}
+          </div>
         </div>
 
+
         <footer className="task-drawer-footer">
-          {entry && (
+          {(entry || initialWeightKg != null) && (
             <button
               type="button"
               className="task-drawer-delete"
