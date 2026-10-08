@@ -211,82 +211,70 @@ textarea {
   pointer-events: none;
 }
 
-/* ---------- Mobile menu (hidden on desktop) ---------- */
 
-.menu-toggle {
+/* ---------- Bottom navigation ----------
+   Replaces the header pills below 640px. Fixed to the bottom so the four
+   views are always one tap away in the same place, rather than behind a
+   hamburger. Hidden on wider screens, where the header pills are used. */
+
+.bottom-nav {
   display: none;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  font-size: 18px;
-  line-height: 1;
-  color: var(--text);
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  justify-self: end;
-  flex: 0 0 auto;
-}
-
-.mobile-menu {
   position: fixed;
-  top: 0;
+  left: 0;
   right: 0;
   bottom: 0;
-  width: min(300px, 82vw);
-  z-index: 92;
-  background: var(--surface-1);
-  border-left: 1px solid var(--border-strong);
-  padding: 18px 14px;
+  z-index: 60;
+  align-items: stretch;
+  justify-content: space-around;
+  gap: 2px;
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+}
+
+.bottom-nav-item {
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  overflow-y: auto;
-  animation: drawer-slide-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-.menu-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 91;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(2px);
-  animation: drawer-fade-in 200ms ease both;
-}
-
-.mobile-menu-item {
-  display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 13px 12px;
-  font-family: var(--sans);
-  font-size: 15px;
-  text-align: left;
-  color: var(--text);
-  background: transparent;
+  justify-content: center;
+  gap: 3px;
+  padding: 7px 2px;
   border: 0;
-  border-left: 2px solid transparent;
   border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
   cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
 }
 
-.mobile-menu-item.is-active {
-  color: var(--text);
-  border-left-color: var(--menu-accent, var(--accent));
-  background: var(--surface-2);
+.bottom-nav-item:hover {
+  color: var(--text-dim);
 }
 
-.mobile-menu-item.is-danger {
-  color: #ff8f8f;
+.bottom-nav-item.is-active {
+  color: var(--tab-accent, var(--accent));
+  background: color-mix(in srgb, var(--tab-accent, var(--accent)) 12%, transparent);
 }
 
-.mobile-menu-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 8px 6px;
+.bottom-nav-icon {
+  font-size: 17px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.bottom-nav-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .brand {
@@ -1836,16 +1824,60 @@ textarea {
 /* The table is five columns now — Title, Status, Area, Deadline, Actions —
    so it fits a phone without hiding anything. The earlier rules that dropped
    Description/Created/Modified/Completed per breakpoint are gone with them. */
+/* ---- Tasks become cards, like the Daily deadline list ----
+   A five-column table cannot show a readable title on a phone, so each task
+   becomes its own card: the title takes the full first line and can never
+   be squeezed away by the other columns competing for space. Column
+   headers are meaningless for a card list, so they are dropped. */
 @media (max-width: 640px) {
-  .task-col-title { flex: 1 1 100px; }
-  .task-col-status { flex: 0 0 96px; }
-  .task-col-area { flex: 0 0 84px; }
-  .task-col-deadline { flex: 0 0 96px; }
-  /* Tighter cells: four columns x 14px of padding is 56px of the budget. */
+  .task-table-header {
+    display: none;
+  }
+
+  .task-table-scroll {
+    border: 0;
+    background: transparent;
+    overflow-x: visible;
+  }
+
+  .task-row-data {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+
   .task-table-header > span,
   .task-row-new > *,
   .task-row-data > * {
-    padding: 6px 7px;
+    border-bottom: 0;
+    padding: 0;
+  }
+
+  .task-col-title {
+    flex: 1 1 100%;
+    order: 1;
+    min-width: 0;
+    font-size: 14px;
+  }
+
+  .task-col-status { order: 2; flex: 0 0 auto; }
+  .task-col-area { order: 3; flex: 0 0 auto; }
+  .task-col-deadline { order: 4; flex: 0 0 auto; margin-left: auto; }
+  .task-col-actions { order: 5; flex: 0 0 auto; }
+
+  .row-delete {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
   }
 }
 
@@ -2503,20 +2535,22 @@ textarea {
 }
 
 @media (max-width: 640px) {
-  /* Below 640 the four nav labels are replaced by the hamburger menu. The
-     logo and the sign-out icon stay in the header either way. The toggle
-     MUST be un-hidden here: hiding .topnav without showing it would leave
-     no navigation at all. */
+  /* Below 640 the header pills are replaced by the fixed bottom bar. The
+     logo and the sign-out icon stay in the header either way, so both
+     navigation and account actions remain reachable. */
   .topnav {
     display: none;
   }
 
-  .menu-toggle {
-    display: inline-flex;
+  .bottom-nav {
+    display: flex;
   }
 
-  /* With the nav gone, the date chip is alone on the row and space-between
-     collapses it to the start, which lines it up under the logo. */
+  /* Clear the fixed bottom bar so it never covers content. */
+  .app {
+    padding: 0 16px 108px;
+  }
+
   .header-nav-row {
     justify-content: flex-start;
     gap: 8px;
@@ -3517,11 +3551,12 @@ textarea {
 @media (max-width: 640px) {
   /* 32px of padding on each side costs 64px of a 360px screen. */
   .app {
-    padding: 0 16px 96px;
+    padding: 0 16px 108px;
   }
 
-  /* The header date picker is the only navigation left, so make it
-     unmistakably the primary control rather than a small chip. */
+  /* The year graphs are hidden at this width, so the date chip is how you
+     reach another day. Make it unmistakably the primary control rather than
+     a small chip. */
   .date-chip {
     padding: 8px 12px;
   }

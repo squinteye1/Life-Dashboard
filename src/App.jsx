@@ -329,14 +329,17 @@ export default function App() {
   const saveTask = useCallback(
     (task) => {
       setTaskData((prev) => {
-        const list = prev[task.areaId] || [];
-        const exists = list.some((t) => t.id === task.id);
-        return {
-          ...prev,
-          [task.areaId]: exists
-            ? list.map((t) => (t.id === task.id ? task : t))
-            : [...list, task]
-        };
+        // Strip the task out of every area first, then add it to the target.
+        // Without this, changing a task's area left it in the one it left
+        // AND the one it moved to -- a duplicate that disappeared again on
+        // the next load, because the database row had been updated
+        // correctly. Mirrors deleteTask below.
+        const next = {};
+        for (const [areaId, list] of Object.entries(prev)) {
+          next[areaId] = list.filter((t) => t.id !== task.id);
+        }
+        next[task.areaId] = [...(next[task.areaId] || []), task];
+        return next;
       });
       db.createTask(task);
     },
@@ -464,14 +467,52 @@ export default function App() {
             setWeightUnit={setWeightUnit}
           />
         )}
-      </main>
-    </div>
-  );
-}
+        </main>
+      <BottomNav view={view} setView={setView} />
+      </div>
+    );
+  }
 
 // ----------------------------------------------------------------------------
 // Header
 // ----------------------------------------------------------------------------
+
+// The four views, with the accent each one owns. Declared once so the header
+// pills and the mobile bottom bar cannot drift apart.
+const NAV_ITEMS = [
+  { id: 'daily', label: 'Daily', icon: '◉', accent: '--accent-daily' },
+  { id: 'habits', label: 'Habits', icon: '✓', accent: '--accent-habits' },
+  { id: 'areas', label: 'Areas', icon: '◫', accent: '--accent-areas' },
+  { id: 'journal', label: 'Journal', icon: '✎', accent: '--accent-journal' }
+];
+
+// Persistent bottom navigation, shown instead of the header pills on small
+// screens. Always visible rather than behind a hamburger, so switching views
+// is one tap and always in the same place.
+function BottomNav({ view, setView }) {
+  return (
+    <nav className="bottom-nav" aria-label="Primary">
+      {NAV_ITEMS.map((item) => {
+        const active = view === item.id;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            className={`bottom-nav-item ${active ? 'is-active' : ''}`}
+            style={{ '--tab-accent': `var(${item.accent})` }}
+            aria-current={active ? 'page' : undefined}
+            onClick={() => setView(item.id)}
+          >
+            <span className="bottom-nav-icon" aria-hidden="true">
+              {item.icon}
+            </span>
+            <span className="bottom-nav-label">{item.label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
 
 function Header({
   view,
@@ -483,7 +524,6 @@ function Header({
 }) {
   const isToday = viewingDate === today;
   const dateInputRef = useRef(null);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   // With the graphs hidden on small screens, this date picker is the only
   // way to reach another day, so the menu must not swallow it.
@@ -502,26 +542,7 @@ function Header({
     }
   };
 
-  const go = (next) => {
-    setView(next);
-    setMenuOpen(false);
-  };
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onKey = (e) => {
-      if (e.key === 'Escape') setMenuOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [menuOpen]);
-
-  // The menu is rendered as a *sibling* of the header, not inside it.
-  // The header has backdrop-filter, which makes it the containing block for
-  // position:fixed descendants — a full-height panel nested inside it gets
-  // clipped to the header's box and lands in the wrong place entirely.
   return (
-    <>
     <header className="header">
       <div className="header-top">
         <div className="brand">
@@ -531,16 +552,6 @@ function Header({
           <span className="brand-name">LIFE.DASHBOARD</span>
         </div>
         <div className="header-actions">
-          <button
-            type="button"
-            className="menu-toggle"
-            onClick={() => setMenuOpen((v) => !v)}
-            aria-expanded={menuOpen}
-            aria-controls="mobile-menu"
-            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-          >
-            <span aria-hidden="true">{menuOpen ? '✕' : '☰'}</span>
-          </button>
           <button
             type="button"
             className="today-btn signout-btn"
@@ -554,38 +565,19 @@ function Header({
           </button>
         </div>
       </div>
-      {/* Nav and date sit in one wrapper so they can stack on desktop and
-          share a single line on a phone. */}
       <div className="header-nav-row">
       <nav className="topnav" aria-label="Primary">
-        <button
-          type="button"
-          className={`nav-pill ${view === 'daily' ? 'is-active' : ''}`}
-          onClick={() => setView('daily')}
-        >
-          Daily
-        </button>
-        <button
-          type="button"
-          className={`nav-pill ${view === 'habits' ? 'is-active' : ''}`}
-          onClick={() => setView('habits')}
-        >
-          Habits
-        </button>
-        <button
-          type="button"
-          className={`nav-pill ${view === 'areas' ? 'is-active' : ''}`}
-          onClick={() => setView('areas')}
-        >
-          Areas
-        </button>
-        <button
-          type="button"
-          className={`nav-pill ${view === 'journal' ? 'is-active' : ''}`}
-          onClick={() => setView('journal')}
-        >
-          Journal
-        </button>
+        {NAV_ITEMS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`nav-pill ${view === item.id ? 'is-active' : ''}`}
+            style={{ '--nav-accent': `var(${item.accent})` }}
+            onClick={() => setView(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
       </nav>
       <div className="header-date">
         <div
@@ -640,58 +632,6 @@ function Header({
       </div>
       </div>
     </header>
-    {menuOpen && (
-      <>
-        <div
-          className="menu-backdrop"
-          onClick={() => setMenuOpen(false)}
-          aria-hidden="true"
-        />
-        <div className="mobile-menu" id="mobile-menu" role="menu">
-          {['daily', 'habits', 'areas', 'journal'].map((v) => (
-            <button
-              key={v}
-              type="button"
-              role="menuitem"
-              className={`mobile-menu-item ${view === v ? 'is-active' : ''}`}
-              style={{ '--menu-accent': `var(--accent-${v})` }}
-              onClick={() => go(v)}
-            >
-              {v[0].toUpperCase() + v.slice(1)}
-            </button>
-          ))}
-          <div className="mobile-menu-divider" />
-          {!isToday && (
-            <button
-              type="button"
-              role="menuitem"
-              className="mobile-menu-item"
-              onClick={() => {
-                setViewingDate(today);
-                setMenuOpen(false);
-              }}
-            >
-              ← Today
-            </button>
-          )}
-          <button
-            type="button"
-            role="menuitem"
-            className="mobile-menu-item is-danger"
-            onClick={() => {
-              setMenuOpen(false);
-              onSignOut();
-            }}
-          >
-            <span className="signout-icon" aria-hidden="true">
-              ⏻
-            </span>
-            Sign out
-          </button>
-        </div>
-      </>
-    )}
-    </>
   );
 }
 
@@ -1980,7 +1920,10 @@ function TaskDrawer({
             </div>
           </div>
 
-          {isAll && (
+          {/* Area is implied by the view when creating inside one area, but
+              it must always be changeable when editing, otherwise a
+              misfiled task can never be re-filed. */}
+          {(isAll || mode === 'edit') && (
             <div className="task-drawer-field">
               <span className="task-drawer-label">Area</span>
               <div
