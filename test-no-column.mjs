@@ -69,8 +69,8 @@ const tick = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 console.log('app loads and renders with no is_event column at all:');
 must(!!$('.topnav'), 'app chrome rendered, no crash');
-must($$('.nav-pill').length === 4, 'nav intact');
-click($$('.nav-pill').find((b) => b.textContent.trim() === 'Areas')); await tick(350);
+must($$('.nav-pill').length === 5, 'nav intact');
+click($$('.nav-pill').find((b) => b.textContent.trim() === 'Tasks')); await tick(350);
 must($$('.task-row-data').length === 1, `legacy task still listed, got ${$$('.task-row-data').length}`);
 must(!$$('.task-row-data')[0].querySelector('.task-event-marker'), 'no marker on a legacy task');
 const filter = $$('.area-filter-btn').find((b) => b.textContent.trim().startsWith('Tasks'));

@@ -72,7 +72,7 @@ const nav = (label) => $$('.nav-pill').find((b) => b.textContent.trim() === labe
 const byText = (sel, t) => $$(sel).find((b) => b.textContent.trim() === t);
 
 console.log('1. marker shows on the event row only');
-click(nav('Areas')); await tick(350);
+click(nav('Tasks')); await tick(350);
 const rows = $$('.task-row-data');
 must(rows.length === 2, `two rows rendered, got ${rows.length}`);
 const evtRow = rows.find((r) => r.textContent.includes('Dentist'));

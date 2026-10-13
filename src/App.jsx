@@ -28,8 +28,10 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  Scatter,
-  Line
+  Line,
+  LineChart,
+  BarChart,
+  Bar
 } from 'recharts';
 import {
   kgToLb,
@@ -423,8 +425,8 @@ export default function App() {
             onToggleHabit={saveHabitDone}
           />
         )}
-        {view === 'areas' && (
-          <AreasView
+        {view === 'tasks' && (
+          <TasksView
             activeAreaId={activeAreaId}
             setActiveAreaId={setActiveAreaId}
             taskData={taskData}
@@ -452,9 +454,10 @@ export default function App() {
             viewingDate={safeViewingDate}
             setViewingDate={setViewingDate}
             today={today}
+            onTaskSave={saveTask}
             onOpenTask={(task) => {
               if (task && task.areaId) setActiveAreaId(task.areaId);
-              setView('areas');
+              setView('tasks');
             }}
             onOpenJournal={() => setView('journal')}
             onOpenHabits={() => setView('habits')}
@@ -467,6 +470,17 @@ export default function App() {
             setWeightUnit={setWeightUnit}
           />
         )}
+        {view === 'analytics' && (
+          <AnalyticsView
+            habitData={habitData}
+            habits={habits}
+            dailyData={dailyData}
+            taskData={taskData}
+            journalData={journalData}
+            weightData={weightData}
+            today={today}
+          />
+        )}
         </main>
       <BottomNav view={view} setView={setView} />
       </div>
@@ -477,13 +491,22 @@ export default function App() {
 // Header
 // ----------------------------------------------------------------------------
 
-// The four views, with the accent each one owns. Declared once so the header
-// pills and the mobile bottom bar cannot drift apart.
+// The five views, with the accent each one owns. Declared once so the header
+// pills and the mobile bottom bar cannot drift apart. `short` exists because
+// "Analytics" does not fit in a fifth of a 360px bottom bar next to its
+// siblings -- the full label stays on the wider header pills.
 const NAV_ITEMS = [
   { id: 'daily', label: 'Daily', icon: '◉', accent: '--accent-daily' },
   { id: 'habits', label: 'Habits', icon: '✓', accent: '--accent-habits' },
-  { id: 'areas', label: 'Areas', icon: '◫', accent: '--accent-areas' },
-  { id: 'journal', label: 'Journal', icon: '✎', accent: '--accent-journal' }
+  { id: 'tasks', label: 'Tasks', icon: '◫', accent: '--accent-areas' },
+  { id: 'journal', label: 'Journal', icon: '✎', accent: '--accent-journal' },
+  {
+    id: 'analytics',
+    label: 'Analytics',
+    short: 'Stats',
+    icon: '◑',
+    accent: '--accent-analytics'
+  }
 ];
 
 // Persistent bottom navigation, shown instead of the header pills on small
@@ -506,7 +529,7 @@ function BottomNav({ view, setView }) {
             <span className="bottom-nav-icon" aria-hidden="true">
               {item.icon}
             </span>
-            <span className="bottom-nav-label">{item.label}</span>
+            <span className="bottom-nav-label">{item.short || item.label}</span>
           </button>
         );
       })}
@@ -880,8 +903,21 @@ function computeYearStats(habitData, grid, habitTotal, todayKeyStr) {
 
 // One GitHub-style year grid, reused by Habits and Daily Check-ins.
 // `levelFor(key)` returns 0-4 (0 = no data). `tipFor(key)` returns the
-// tooltip lines, which also become the cell's aria-label.
-function YearHeatmap({ grid, today, year, levelFor, tipFor, onSelect, legendHint, tipClassName }) {
+// tooltip lines, which also become the cell's aria-label. `cellColorFor(key)`
+// optionally overrides the fill with an exact colour, which is how the
+// Analytics level grid paints each day in its own Map-of-Consciousness swatch
+// instead of the coarse 5-step ramp.
+function YearHeatmap({
+  grid,
+  today,
+  year,
+  levelFor,
+  tipFor,
+  onSelect,
+  legendHint,
+  tipClassName,
+  cellColorFor
+}) {
   const [hovered, setHovered] = useState(null); // { key, x, y }
 
   // Month label per column = first in-year cell whose month starts in that col.
@@ -944,6 +980,11 @@ function YearHeatmap({ grid, today, year, levelFor, tipFor, onSelect, legendHint
                   disabled={isFuture || !c.inYear}
                   aria-label={
                     lines.length ? `${c.key} · ${lines.join(' · ')}` : c.key
+                  }
+                  style={
+                    cellColorFor
+                      ? { background: cellColorFor(c.key) }
+                      : undefined
                   }
                   onMouseEnter={(e) =>
                     setHovered({
@@ -1022,14 +1063,40 @@ function levelFromCount(count, total) {
   return 4;
 }
 
-// Vibe is an absolute 0-100 score, not a ratio, so it gets its own bands.
-// Darker always means better, matching the habits ramp.
+// Buckets the 17-level vibe scale into the shared 5-step ramp used by every
+// heatmap. This used to band a 0-100 score (vibe <= 25 -> 1, <= 75 -> 3), which
+// was left over from before the vibe picker moved to the Map of Consciousness.
+// Against levels of 20-700 that put only Shame at step 1 and everything from
+// Willingness up at step 4, so the Daily graph read as near-maximum all year.
+//
+// Rank is the right input, not value: the scale is exponential (roughly 1.24x
+// per level), so equal bands of raw value would cram everything interesting
+// into one step and leave the extremes flat.
+// Vibe is an ordinal ladder of 17 named stages, not a ratio scale: the step
+// from 20 to 30 is not the same distance as 600 to 700. So nothing in this app
+// averages the raw numbers -- it counts levels or compares their ranks. The
+// mean of 20 and 700 is meaningless, which is exactly the trap a plain
+// "average vibe" tile walks into.
+const VIBE_RANK = Object.fromEntries(HAWKINS_LEVELS.map((l, i) => [l.value, i]));
+const VIBE_BY_RANK = HAWKINS_LEVELS;
+
+// Hawkins' own dividing lines. 250 Neutrality is where he puts the edge of the
+// ego-states and the start of "life force"; 350 Acceptance is where the
+// constructive range begins. Zone streaks are counted against these rather
+// than an arbitrary threshold, because they are the numbers the model is
+// built on.
+const VIBE_ZONES = [
+  { id: 'neutrality', label: 'Neutrality', min: 250 },
+  { id: 'acceptance', label: 'Acceptance', min: 350 }
+];
+
+const VIBE_RAMP_STEPS = 4;
+
 function levelFromVibe(vibe) {
   if (vibe == null) return 0;
-  if (vibe <= 25) return 1;
-  if (vibe <= 50) return 2;
-  if (vibe <= 75) return 3;
-  return 4;
+  const rank = VIBE_RANK[vibe];
+  if (rank == null) return 0;
+  return 1 + Math.min(VIBE_RAMP_STEPS, Math.floor((rank / 16) * VIBE_RAMP_STEPS + 0.5));
 }
 
 // A day counts as "written" if it has any text or a mood. Days you never
@@ -1131,10 +1198,18 @@ function HabitRow({ habit, checked, onToggle, streak }) {
 }
 
 // ----------------------------------------------------------------------------
-// Areas view — task panel per area
+// Tasks view — one panel per life area
 // ----------------------------------------------------------------------------
 
-function AreasView({
+// A task counts as open until it is finished or thrown away. Every count in
+// this view — the area pills, the header total, the filter badges — is meant
+// to answer "what is left to do", so all of them exclude done and rejected
+// rather than counting the whole backlog.
+function isOpenTask(t) {
+  return t.status === 'todo' || t.status === 'in_progress';
+}
+
+function TasksView({
   activeAreaId,
   setActiveAreaId,
   taskData,
@@ -1195,16 +1270,16 @@ function AreasView({
     kindFilter === 'all'
       ? areaTasks
       : areaTasks.filter((t) => (kindFilter === 'events') === (t.isEvent === true));
-  const eventCount = areaTasks.filter((t) => t.isEvent === true).length;
-  const openCount = visibleTasks.filter(
-    (t) => t.status === 'todo' || t.status === 'in_progress'
-  ).length;
+
+  // Badge counts describe what selecting the filter would leave you with, so
+  // they run over open tasks only. Counting finished events here made the
+  // badge disagree with the list underneath it.
+  const openAreaTasks = areaTasks.filter(isOpenTask);
+  const eventCount = openAreaTasks.filter((t) => t.isEvent === true).length;
+  const plainTaskCount = openAreaTasks.length - eventCount;
+  const openCount = visibleTasks.filter(isOpenTask).length;
   const totalOpen = AREAS.reduce(
-    (sum, a) =>
-      sum +
-      (taskData[a.id] || []).filter(
-        (t) => t.status === 'todo' || t.status === 'in_progress'
-      ).length,
+    (sum, a) => sum + (taskData[a.id] || []).filter(isOpenTask).length,
     0
   );
 
@@ -1232,9 +1307,7 @@ function AreasView({
             </span>
           </button>
           {AREAS.map((a) => {
-            const open = (taskData[a.id] || []).filter(
-              (t) => t.status === 'todo' || t.status === 'in_progress'
-            ).length;
+            const open = (taskData[a.id] || []).filter(isOpenTask).length;
             const isActive = a.id === activeAreaId;
             return (
               <button
@@ -1287,6 +1360,9 @@ function AreasView({
                   {label}
                   {id === 'events' && eventCount > 0 && (
                     <span className="area-filter-count">{eventCount}</span>
+                  )}
+                  {id === 'tasks' && plainTaskCount > 0 && (
+                    <span className="area-filter-count">{plainTaskCount}</span>
                   )}
                 </button>
               ))}
@@ -2294,6 +2370,987 @@ function metricLabel(value, labels) {
   return labels[Math.max(1, Math.min(10, value))] || '—';
 }
 
+// ----------------------------------------------------------------------------
+// Analytics — trends across habits, wellbeing and tasks over one shared period
+//
+// Everything here is computed from state already held in memory, so there is
+// no query and no schema change. That also means the page can only see as far
+// back as the loaded data does, and the panels say so when the window is thin.
+// ----------------------------------------------------------------------------
+
+// One period selector drives every panel. Without a shared window the panels
+// disagree with each other and the page reads as unrelated numbers stacked up.
+const PERIODS = [
+  { id: '30d', label: '30d', days: 30 },
+  { id: '90d', label: '90d', days: 90 },
+  { id: 'ytd', label: 'YTD' },
+  { id: 'all', label: 'All' }
+];
+
+function medianOf(nums) {
+  if (!nums.length) return null;
+  const s = [...nums].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+// The named stage a median rank sits on.
+//
+// VIBE_BY_RANK is an array, so it only answers integer indices. With an even
+// number of days medianOf averages the two middle ranks and hands back a .5
+// (4.5 is the midpoint of Courage and Neutrality), which indexes off the end
+// of the array and reads back as undefined. Flooring picks the lower of the
+// two middle stages, so a group's label never claims a level above the one
+// half of its days actually reached.
+//
+// The fractional median is still what the dose bar uses for its height, where
+// the half-step is real position rather than a label.
+function levelForRank(median) {
+  if (median == null) return null;
+  return VIBE_BY_RANK[Math.floor(median)] || null;
+}
+
+function vibeRankFor(key, dailyData) {
+  const v = dailyData[key]?.vibe;
+  return v == null ? null : (VIBE_RANK[v] ?? null);
+}
+
+function vibeFor(key, dailyData) {
+  const v = dailyData[key]?.vibe;
+  return v == null ? null : (HAWKINS_BY_VALUE[v] || null);
+}
+
+// Earliest day with anything logged. "All" needs a real start, not an
+// arbitrary one, or the charts open on weeks of empty space.
+function earliestLoggedKey({ habitData, dailyData, journalData, weightData, tasks }) {
+  let min = null;
+  const consider = (key) => {
+    if (!key) return;
+    if (min == null || key < min) min = key;
+  };
+  for (const src of [habitData, dailyData, journalData, weightData]) {
+    for (const k of Object.keys(src || {})) consider(k);
+  }
+  // Tasks carry timestamps rather than day keys, so convert before comparing.
+  for (const t of tasks) {
+    if (t.createdAt != null) consider(todayKey(new Date(t.createdAt)));
+  }
+  return min;
+}
+
+function resolvePeriodStart(periodId, today, earliest) {
+  const preset = PERIODS.find((p) => p.id === periodId);
+  if (preset?.days) return addDays(today, -(preset.days - 1));
+  if (periodId === 'ytd') return `${today.slice(0, 4)}-01-01`;
+  return earliest || today;
+}
+
+// Longest run of `done` days anywhere inside `keys`, not just up to today.
+function streakWithin(habitData, habitId, keys) {
+  let best = 0;
+  let cur = 0;
+  for (const k of keys) {
+    if (habitData[k]?.[habitId]) {
+      cur += 1;
+      if (cur > best) best = cur;
+    } else {
+      cur = 0;
+    }
+  }
+  return best;
+}
+
+// Group day keys by 'YYYY-MM', preserving order. Month buckets drive the
+// habits bar chart.
+function groupByMonth(keys) {
+  const out = new Map();
+  for (const k of keys) {
+    const m = k.slice(0, 7);
+    if (!out.has(m)) out.set(m, []);
+    out.get(m).push(k);
+  }
+  return out;
+}
+
+// Group day keys by ISO week (Monday start), for the tasks chart.
+function weekStartKey(key) {
+  const d = dateFromKey(key);
+  const offset = (d.getDay() + 6) % 7;
+  return addDays(key, -offset);
+}
+
+function groupByWeek(keys) {
+  const out = new Map();
+  for (const k of keys) {
+    const w = weekStartKey(k);
+    if (!out.has(w)) out.set(w, []);
+    out.get(w).push(k);
+  }
+  return out;
+}
+
+function AnalyticsView({
+  habitData,
+  habits,
+  dailyData,
+  taskData,
+  journalData,
+  weightData,
+  today
+}) {
+  const [period, setPeriod] = useState('90d');
+
+  // Every task across every area, tagged with its area where the row lacks one.
+  const allTasks = useMemo(() => {
+    const out = [];
+    for (const a of AREAS) {
+      for (const t of taskData[a.id] || []) {
+        out.push(t.areaId ? t : { ...t, areaId: a.id });
+      }
+    }
+    return out;
+  }, [taskData]);
+
+  const earliest = useMemo(
+    () => earliestLoggedKey({ habitData, dailyData, journalData, weightData, tasks: allTasks }),
+    [habitData, dailyData, journalData, weightData, allTasks]
+  );
+
+  const startKey = resolvePeriodStart(period, today, earliest);
+
+  // Inclusive list of every day in the window. Every panel iterates this, so
+  // they are all guaranteed to describe the same span.
+  const keys = useMemo(() => {
+    if (startKey > today) return [];
+    const out = [];
+    let k = startKey;
+    while (k <= today) {
+      out.push(k);
+      k = addDays(k, 1);
+    }
+    return out;
+  }, [startKey, today]);
+
+  const dayCount = keys.length;
+
+  // ---- Habits -------------------------------------------------------------
+
+  const habitTotal = habits.length;
+
+  const monthly = useMemo(() => {
+    const byMonth = groupByMonth(keys);
+    return [...byMonth.entries()].map(([month, monthKeys]) => {
+      let completions = 0;
+      let activeDays = 0;
+      for (const k of monthKeys) {
+        const n = countCompleted(habitData[k]);
+        completions += n;
+        if (n > 0) activeDays += 1;
+      }
+      const denom = habitTotal * monthKeys.length;
+      return {
+        month,
+        label: monthLabel(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1),
+        pct: denom > 0 ? Math.round((completions / denom) * 100) : 0,
+        completions,
+        activeDays,
+        days: monthKeys.length
+      };
+    });
+  }, [keys, habitData, habitTotal]);
+
+  const habitRows = useMemo(() => {
+    const half = Math.max(1, Math.floor(dayCount / 2));
+    const firstHalf = keys.slice(0, half);
+    const secondHalf = keys.slice(half);
+    const rate = (subset, id) => {
+      const done = subset.filter((k) => habitData[k]?.[id]).length;
+      return subset.length ? done / subset.length : 0;
+    };
+    return habits
+      .map((h) => {
+        const done = keys.filter((k) => habitData[k]?.[h.id]).length;
+        const before = rate(firstHalf, h.id);
+        const after = rate(secondHalf, h.id);
+        return {
+          habit: h,
+          done,
+          pct: dayCount ? Math.round((done / dayCount) * 100) : 0,
+          current: computeStreak(habitData, h.id, today),
+          best: streakWithin(habitData, h.id, keys),
+          // Rounded so a 1-day difference in a short window does not read as
+          // a dramatic swing.
+          trend: Math.round((after - before) * 100)
+        };
+      })
+      .sort((a, b) => b.pct - a.pct);
+  }, [habits, keys, habitData, dayCount, today]);
+
+  const habitTotals = useMemo(() => {
+    let completions = 0;
+    let perfectDays = 0;
+    let activeDays = 0;
+    for (const k of keys) {
+      const n = countCompleted(habitData[k]);
+      completions += n;
+      if (n > 0) activeDays += 1;
+      if (habitTotal > 0 && n >= habitTotal) perfectDays += 1;
+    }
+    return { completions, perfectDays, activeDays };
+  }, [keys, habitData, habitTotal]);
+
+  // ---- Wellbeing ----------------------------------------------------------
+
+  // Counted per level, never averaged. Bands give a three-way read that stays
+  // stable no matter which levels happen to be common.
+  const vibeLevels = useMemo(() => {
+    const counts = new Map();
+    for (const k of keys) {
+      const v = dailyData[k]?.vibe;
+      if (v == null) continue;
+      counts.set(v, (counts.get(v) || 0) + 1);
+    }
+    const rows = [...counts.entries()]
+      .map(([value, count]) => ({ value, count, level: HAWKINS_BY_VALUE[value] }))
+      .filter((r) => r.level)
+      .sort((a, b) => a.value - b.value);
+    const total = rows.reduce((s, r) => s + r.count, 0);
+    return { rows, total };
+  }, [keys, dailyData]);
+
+  const vibeBands = useMemo(() => {
+    const out = HAWKINS_BANDS.map((b) => ({ ...b, count: 0 }));
+    const index = Object.fromEntries(out.map((b, i) => [b.id, i]));
+    for (const k of keys) {
+      const v = dailyData[k]?.vibe;
+      const level = v == null ? null : HAWKINS_BY_VALUE[v];
+      if (!level) continue;
+      out[index[level.band]].count += 1;
+    }
+    return out;
+  }, [keys, dailyData]);
+
+  // Stress and energy share one 1-10 axis because the relationship between
+  // them is the interesting part, and that is only visible when they are
+  // plotted against each other.
+  const wellbeingSeries = useMemo(
+    () =>
+      keys.map((k) => ({
+        key: k,
+        stress: dailyData[k]?.stress ?? null,
+        energy: dailyData[k]?.energy ?? null
+      })),
+    [keys, dailyData]
+  );
+
+  const wellbeingAverages = useMemo(() => {
+    let stressSum = 0;
+    let stressN = 0;
+    let energySum = 0;
+    let energyN = 0;
+    let logged = 0;
+    for (const k of keys) {
+      const e = dailyData[k];
+      if (!e) continue;
+      if (e.stress != null) {
+        stressSum += e.stress;
+        stressN += 1;
+      }
+      if (e.energy != null) {
+        energySum += e.energy;
+        energyN += 1;
+      }
+      if (e.vibe != null || e.stress != null || e.energy != null) logged += 1;
+    }
+    return {
+      logged,
+      stress: stressN ? stressSum / stressN : null,
+      energy: energyN ? energySum / energyN : null
+    };
+  }, [keys, dailyData]);
+
+  // ---- Tasks --------------------------------------------------------------
+
+  const taskStats = useMemo(() => {
+    const weeks = groupByWeek(keys);
+    const createdByWeek = new Map();
+    const doneByWeek = new Map();
+
+    for (const t of allTasks) {
+      if (t.createdAt != null) {
+        const w = weekStartKey(todayKey(new Date(t.createdAt)));
+        if (w >= weekStartKey(keys[0] || today) && w <= weekStartKey(today)) {
+          createdByWeek.set(w, (createdByWeek.get(w) || 0) + 1);
+        }
+      }
+      if (t.status === 'done' && t.completedAt != null) {
+        const w = weekStartKey(todayKey(new Date(t.completedAt)));
+        if (w >= weekStartKey(keys[0] || today) && w <= weekStartKey(today)) {
+          doneByWeek.set(w, (doneByWeek.get(w) || 0) + 1);
+        }
+      }
+    }
+
+    const chart = [...weeks.keys()]
+      .sort()
+      .map((w) => ({
+        week: w,
+        label: monthLabel(Number(w.slice(0, 4)), Number(w.slice(5, 7)) - 1),
+        created: createdByWeek.get(w) || 0,
+        completed: doneByWeek.get(w) || 0
+      }));
+
+    let open = 0;
+    let overdue = 0;
+    let doneInWindow = 0;
+    let withDeadline = 0;
+    let onTime = 0;
+    for (const t of allTasks) {
+      if (t.status === 'done') {
+        const k = t.completedAt != null ? todayKey(new Date(t.completedAt)) : null;
+        if (k && k >= startKey && k <= today) {
+          doneInWindow += 1;
+          if (t.deadlineAt != null) {
+            withDeadline += 1;
+            if (t.completedAt <= t.deadlineAt) onTime += 1;
+          }
+        }
+        continue;
+      }
+      if (t.status === 'rejected') continue;
+      open += 1;
+      if (t.deadlineAt != null) {
+        const dk = todayKey(new Date(t.deadlineAt));
+        if (dk < today) overdue += 1;
+      }
+    }
+
+    return {
+      chart,
+      open,
+      overdue,
+      doneInWindow,
+      onTimeRate: withDeadline ? Math.round((onTime / withDeadline) * 100) : null
+    };
+  }, [allTasks, keys, startKey, today]);
+
+  // ---- Habit vs vibe ------------------------------------------------------
+
+  // Compares the *median rank* of vibe on days a habit was kept against days
+  // it was not. Median of ranks is valid for an ordinal scale; a mean of the
+  // raw 20-700 values would not be. Sample floors are enforced, because a
+  // split of 3 vs 2 days will "prove" anything.
+  const correlations = useMemo(() => {
+    const MIN_GROUP = 5;
+    return habits
+      .map((h) => {
+        const onRanks = [];
+        const offRanks = [];
+        for (const k of keys) {
+          const rank = vibeRankFor(k, dailyData);
+          if (rank == null) continue;
+          if (habitData[k]?.[h.id]) onRanks.push(rank);
+          else offRanks.push(rank);
+        }
+        const onMedian = medianOf(onRanks);
+        const offMedian = medianOf(offRanks);
+        const enough = onRanks.length >= MIN_GROUP && offRanks.length >= MIN_GROUP;
+        return {
+          habit: h,
+          onDays: onRanks.length,
+          offDays: offRanks.length,
+          onLevel: levelForRank(onMedian),
+          offLevel: levelForRank(offMedian),
+          delta: enough ? onMedian - offMedian : null,
+          enough
+        };
+      })
+      .filter((r) => r.enough || (r.onDays > 0 && r.offDays > 0))
+      .sort((a, b) => (b.delta ?? -99) - (a.delta ?? -99));
+  }, [habits, keys, habitData, dailyData]);
+
+  // ---- Zone streaks ---------------------------------------------------------
+
+  // Hawkins frames progress as dwell time rather than peaks: you do not change
+  // by touching a high level once. So this tracks *runs* at or above his two
+  // dividing lines, not a best-ever reading. A day with no check-in breaks a
+  // run -- there is no evidence for that day, so it is neither in nor out.
+  const zoneStreaks = useMemo(() => {
+    return VIBE_ZONES.map((zone) => {
+      let current = 0;
+      let best = 0;
+      let days = 0;
+      for (const k of keys) {
+        const level = vibeFor(k, dailyData);
+        if (!level) continue; // unlogged day: does not count either way
+        if (level.value >= zone.min) {
+          days += 1;
+          current += 1;
+          if (current > best) best = current;
+        } else {
+          current = 0;
+        }
+      }
+      // The current run should still be alive if today is unlogged.
+      return {
+        ...zone,
+        days,
+        pct: keys.length ? Math.round((days / keys.length) * 100) : 0,
+        best,
+        current
+      };
+    });
+  }, [keys, dailyData]);
+
+  // ---- Dose-response -------------------------------------------------------
+
+  // Buckets by how many habits were kept, then reports the median vibe level
+  // in each. Deliberately not the per-habit binary split below: collapsing
+  // "1 habit" and "9 habits" into one bucket discards the dose, and a smooth
+  // monotonic gradient across four buckets is much harder to produce by
+  // chance than any single habit's either/or comparison.
+  const doseResponse = useMemo(() => {
+    const BUCKETS = [
+      { id: '0', label: '0', test: (n) => n === 0 },
+      { id: '1-2', label: '1–2', test: (n) => n >= 1 && n <= 2 },
+      { id: '3-5', label: '3–5', test: (n) => n >= 3 && n <= 5 },
+      { id: '6+', label: '6+', test: (n) => n >= 6 }
+    ];
+    const rows = BUCKETS.map((b) => ({ ...b, ranks: [], days: 0 }));
+    for (const k of keys) {
+      const rank = vibeRankFor(k, dailyData);
+      const bucket = rows.find((r) => r.test(countCompleted(habitData[k])));
+      if (!bucket) continue;
+      bucket.days += 1;
+      if (rank != null) bucket.ranks.push(rank);
+    }
+    return rows.map((b) => {
+      const median = medianOf(b.ranks);
+      return {
+        id: b.id,
+        label: b.label,
+        days: b.days,
+        paired: b.ranks.length,
+        median,
+        level: levelForRank(median)
+      };
+    });
+  }, [keys, habitData, dailyData]);
+
+  // Only report a gradient if it actually climbs and the endpoints have real
+  // support. Otherwise this is noise and the card says so instead.
+  const doseSignal = useMemo(() => {
+    const usable = doseResponse.filter((r) => r.median != null && r.days >= 3);
+    if (usable.length < 2) return null;
+    const steps = usable[usable.length - 1].median - usable[0].median;
+    return { steps, monotonic: steps > 0, rows: usable };
+  }, [doseResponse]);
+
+  const thinData = dayCount > 0 && habitTotals.activeDays < 14;
+
+  // Full-year grid for the level heatmap. The 20-700 values are exponential
+  // (~1.24x per level), so a linear axis would squeeze the entire range people
+  // actually live in -- Fear through Reason, ~4 of 16 intervals -- into the
+  // bottom fifth of the chart. Equal spacing per named level is the honest
+  // rendering, and the swatch carries the value.
+  const levelYear = Number(today.slice(0, 4));
+  const levelGrid = useMemo(() => buildYearGrid(levelYear), [levelYear]);
+
+  const levelTip = (key) => {
+    const level = vibeFor(key, dailyData);
+    if (!level) return [];
+    const out = [`${level.name} · ${level.value}`];
+    const e = dailyData[key];
+    if (e?.stress != null) out.push(`Stress ${e.stress}`);
+    if (e?.energy != null) out.push(`Energy ${e.energy}`);
+    return out;
+  };
+
+  const levelsPresent = vibeLevels.rows.length > 0;
+
+  return (
+    <section className="analytics-view">
+      <header className="section-header analytics-header">
+        <div>
+          <div className="section-eyebrow">Trends</div>
+          <h1 className="section-title-lg">Analytics</h1>
+        </div>
+        <div className="analytics-periods" role="group" aria-label="Period">
+          {PERIODS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`analytics-period ${period === p.id ? 'is-active' : ''}`}
+              aria-pressed={period === p.id}
+              onClick={() => setPeriod(p.id)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <p className="analytics-span">
+        {formatDate(startKey)} – {formatDate(today)} · {dayCount} days
+        {earliest && period === 'all' ? ' · all logged data' : ''}
+      </p>
+
+      {thinData && (
+        <p className="analytics-note">
+          Only {habitTotals.activeDays} days with habits logged in this window.
+          Trends below are directional at best — widen the period if you can.
+        </p>
+      )}
+
+      {/* Headline strip */}
+      <div className="analytics-stats">
+        <Stat label="Habit completions" value={habitTotals.completions.toLocaleString()} />
+        <Stat label="Perfect days" value={habitTotals.perfectDays.toLocaleString()} />
+        <Stat label="Check-ins" value={wellbeingAverages.logged.toLocaleString()} />
+        <Stat
+          label="Tasks done"
+          value={taskStats.doneInWindow.toLocaleString()}
+        />
+        <Stat
+          label="On time"
+          value={taskStats.onTimeRate == null ? '—' : `${taskStats.onTimeRate}%`}
+        />
+      </div>
+
+      {/* ---- Zone streaks + level heatmap ---- */}
+      <section className="analytics-card">
+        <header className="analytics-card-head">
+          <span className="control-label">Consciousness level</span>
+          <span className="analytics-card-sub">{vibeLevels.total} days logged</span>
+        </header>
+
+        {/* Dwell time, not peaks. The two thresholds are Hawkins' own lines. */}
+        <div className="analytics-zones">
+          {zoneStreaks.map((z) => (
+            <div key={z.id} className="analytics-zone">
+              <div className="analytics-zone-head">
+                <span className="analytics-zone-label">≥ {z.label}</span>
+                <span className="analytics-zone-pct">{z.pct}% of days</span>
+              </div>
+              <div className="analytics-zone-track">
+                <div
+                  className="analytics-zone-fill"
+                  style={{ width: `${Math.max(2, z.pct)}%` }}
+                />
+              </div>
+              <div className="analytics-zone-meta">
+                <span>
+                  current <strong>{z.current}d</strong>
+                </span>
+                <span>
+                  best <strong>{z.best}d</strong>
+                </span>
+                <span>
+                  {z.days} {z.days === 1 ? 'day' : 'days'} at or above {z.min}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {levelsPresent ? (
+          <>
+            <div className="analytics-level-heatmap">
+              <YearHeatmap
+                grid={levelGrid}
+                today={today}
+                year={levelYear}
+                levelFor={(k) => levelFromVibe(dailyData[k]?.vibe)}
+                tipFor={levelTip}
+                cellColorFor={(k) => {
+                  const level = vibeFor(k, dailyData);
+                  // No entry: fall back to the shared empty-cell colour rather
+                  // than an invisible `undefined` background.
+                  return level ? level.color : '#161616';
+                }}
+                legendHint="· each day in its own level colour"
+              />
+            </div>
+            <p className="analytics-explain">
+              One square per day, coloured by the exact level you logged. Levels
+              are equally spaced rather than plotted on the raw 20–700 score,
+              because that score grows roughly 1.24× per level — a linear axis
+              would flatten everything between Fear and Reason into one band.
+            </p>
+          </>
+        ) : (
+          <p className="analytics-note">No vibe logged in this period.</p>
+        )}
+      </section>
+
+      {/* Habits */}
+      <section className="analytics-card">
+        <header className="analytics-card-head">
+          <span className="control-label">Habits</span>
+          <span className="analytics-card-sub">
+            {habitTotal > 0
+              ? `${Math.round(
+                  (habitTotals.completions / (habitTotal * Math.max(1, dayCount))) * 100
+                )}% average`
+              : '—'}
+          </span>
+        </header>
+
+        {monthly.length > 1 ? (
+          <div className="analytics-months">
+            {monthly.map((m) => (
+              <div key={m.month} className="analytics-month">
+                <div className="analytics-month-track">
+                  <div
+                    className="analytics-month-fill"
+                    style={{ height: `${Math.max(2, m.pct)}%` }}
+                    title={`${m.label}: ${m.pct}% · ${m.completions} completions`}
+                  />
+                </div>
+                <div className="analytics-month-value">{m.pct}%</div>
+                <div className="analytics-month-label">{m.label}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="analytics-note">
+            Needs more than one month in range to show a trend.
+          </p>
+        )}
+
+        <div className="analytics-habit-list">
+          {habitRows.map((r) => (
+            <div key={r.habit.id} className="analytics-habit-row">
+              <span className="analytics-habit-name">{r.habit.name}</span>
+              <span className="analytics-habit-bar">
+                <span
+                  className="analytics-habit-fill"
+                  style={{ width: `${r.pct}%`, background: HABIT_ACCENT }}
+                />
+              </span>
+              <span className="analytics-habit-pct">{r.pct}%</span>
+              <span
+                className={`analytics-habit-trend ${
+                  r.trend > 0 ? 'is-up' : r.trend < 0 ? 'is-down' : ''
+                }`}
+              >
+                {r.trend > 0 ? `▲ ${r.trend}` : r.trend < 0 ? `▼ ${Math.abs(r.trend)}` : '–'}
+              </span>
+              <span className="analytics-habit-streak" title="Current / best streak in range">
+                {r.current}/{r.best}d
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ---- Dose-response ---- */}
+      <section className="analytics-card">
+        <header className="analytics-card-head">
+          <span className="control-label">Habits vs level</span>
+          <span className="analytics-card-sub">median level by habits kept</span>
+        </header>
+
+        {doseSignal ? (
+          <>
+            <p className="analytics-dose-headline">
+              {doseSignal.monotonic ? (
+                <>
+                  Keeping more habits tracks with a{' '}
+                  <strong style={{ color: levelForRank(doseSignal.rows[doseSignal.rows.length - 1].median)?.color }}>
+                    higher
+                  </strong>{' '}
+                  level — about {doseSignal.steps} step
+                  {doseSignal.steps === 1 ? '' : 's'} across the range.
+                </>
+              ) : (
+                <>No clear gradient in this window — the buckets do not climb.</>
+              )}
+            </p>
+
+            <div className="analytics-dose">
+              {doseResponse.map((r) => (
+                <div key={r.id} className="analytics-dose-row">
+                  <span className="analytics-dose-bucket">{r.label}</span>
+                  <span className="analytics-dose-track">
+                    {/* Height encodes the median level's rank within the 17
+                        stages, so "higher" is literally higher on the chart. */}
+                    <span
+                      className="analytics-dose-bar"
+                      style={{
+                        height: r.median == null ? 2 : `${Math.max(6, ((r.median + 1) / 17) * 100)}%`,
+                        background: r.level ? r.level.color : 'var(--surface-3)'
+                      }}
+                    />
+                  </span>
+                  <span className="analytics-dose-level">
+                    {r.level ? r.level.name : '—'}
+                  </span>
+                  <span className="analytics-dose-days">{r.days}d</span>
+                </div>
+              ))}
+            </div>
+            <p className="analytics-explain">
+              Buckets every day by how many habits you kept, then takes the
+              median level in each. A smooth climb is harder to hit by accident
+              than any single habit's yes/no split, because it uses the dose —
+              days with 9 habits are not the same as days with 1. Buckets need 3+
+              days before the count is shown as meaningful.
+            </p>
+          </>
+        ) : (
+          <p className="analytics-note">
+            Not enough paired habit and vibe data in this window yet. Widen the
+            period, or log a few more days.
+          </p>
+        )}
+      </section>
+
+      {/* Wellbeing */}
+      <section className="analytics-card">
+        <header className="analytics-card-head">
+          <span className="control-label">Vibe, stress &amp; energy</span>
+          <span className="analytics-card-sub">{wellbeingAverages.logged} check-ins</span>
+        </header>
+
+        {/* Bands first: three numbers that stay readable at any sample size. */}
+        <div className="analytics-bands">
+          {vibeBands.map((b) => {
+            const pct =
+              vibeLevels.total > 0 ? Math.round((b.count / vibeLevels.total) * 100) : 0;
+            return (
+              <div key={b.id} className="analytics-band">
+                <div className="analytics-band-track">
+                  <div className="analytics-band-fill" style={{ width: `${pct}%` }} />
+                </div>
+                <div className="analytics-band-label">{b.label}</div>
+                <div className="analytics-band-value">{pct}%</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {vibeLevels.total === 0 ? (
+          <p className="analytics-note">No vibe logged in this period.</p>
+        ) : (
+          <>
+            <p className="analytics-explain">
+              Vibe is an ordinal scale of 17 named stages, so it is counted by
+              level rather than averaged — a mean across those stages would not
+              mean anything.
+            </p>
+            <div className="analytics-levels">
+              {vibeLevels.rows.map((r) => (
+                <div key={r.value} className="analytics-level">
+                  <span
+                    className="analytics-level-dot"
+                    style={{ background: r.level.color }}
+                    aria-hidden="true"
+                  />
+                  <span className="analytics-level-name">{r.level.name}</span>
+                  <span className="analytics-level-track">
+                    <span
+                      className="analytics-level-fill"
+                      style={{
+                        width: `${Math.round((r.count / vibeLevels.total) * 100)}%`,
+                        background: r.level.color
+                      }}
+                    />
+                  </span>
+                  <span className="analytics-level-count">{r.count}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {wellbeingAverages.stress != null && (
+          <div className="analytics-averages">
+            <Stat
+              label="Avg stress"
+              value={`${wellbeingAverages.stress.toFixed(1)} · ${metricLabel(
+                Math.round(wellbeingAverages.stress),
+                STRESS_LABELS
+              )}`}
+            />
+            <Stat
+              label="Avg energy"
+              value={`${wellbeingAverages.energy.toFixed(1)} · ${metricLabel(
+                Math.round(wellbeingAverages.energy),
+                ENERGY_LABELS
+              )}`}
+            />
+          </div>
+        )}
+
+        {/* One shared axis — the inverse relationship is the point. */}
+        <div className="analytics-chart">
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={wellbeingSeries} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+              <CartesianGrid stroke="var(--border)" vertical={false} />
+              <XAxis
+                dataKey="key"
+                tick={{ fontSize: 10, fill: 'var(--text-faint)' }}
+                minTickGap={40}
+              />
+              <YAxis
+                domain={[1, 10]}
+                ticks={[1, 4, 7, 10]}
+                tick={{ fontSize: 10, fill: 'var(--text-faint)' }}
+              />
+              <Tooltip content={<WellbeingTooltip />} />
+              <Line
+                type="monotone"
+                dataKey="energy"
+                stroke="var(--accent-journal)"
+                strokeWidth={2}
+                dot={false}
+                connectNulls
+              />
+              <Line
+                type="monotone"
+                dataKey="stress"
+                stroke="var(--accent-areas)"
+                strokeWidth={2}
+                dot={false}
+                connectNulls
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="analytics-legend">
+          <span className="analytics-legend-key" style={{ background: 'var(--accent-journal)' }} />
+          energy
+          <span className="analytics-legend-key" style={{ background: 'var(--accent-areas)' }} />
+          stress
+        </p>
+      </section>
+
+      {/* Tasks */}
+      <section className="analytics-card">
+        <header className="analytics-card-head">
+          <span className="control-label">Tasks</span>
+          <span className="analytics-card-sub">
+            {taskStats.open} open{taskStats.overdue > 0 ? ` · ${taskStats.overdue} overdue` : ''}
+          </span>
+        </header>
+
+        {taskStats.chart.length > 0 ? (
+          <div className="analytics-chart">
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={taskStats.chart} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+                <CartesianGrid stroke="var(--border)" vertical={false} />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 10, fill: 'var(--text-faint)' }}
+                  minTickGap={20}
+                />
+                <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: 'var(--text-faint)' }} />
+                <Tooltip content={<TasksTooltip />} />
+                <Bar dataKey="created" fill="var(--accent-areas)" fillOpacity={0.35} />
+                <Bar dataKey="completed" fill="var(--accent-daily)" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <p className="analytics-note">No tasks created in this period.</p>
+        )}
+        <p className="analytics-legend">
+          <span className="analytics-legend-key" style={{ background: 'var(--accent-areas)' }} />
+          created
+          <span className="analytics-legend-key" style={{ background: 'var(--accent-daily)' }} />
+          completed
+        </p>
+        {taskStats.onTimeRate != null && (
+          <p className="analytics-explain">
+            {taskStats.onTimeRate}% of tasks with a deadline were finished on or
+            before it.
+          </p>
+        )}
+      </section>
+
+      {/* Habit vs vibe */}
+      <section className="analytics-card">
+        <header className="analytics-card-head">
+          <span className="control-label">Habits vs vibe</span>
+          <span className="analytics-card-sub">median level, days kept vs missed</span>
+        </header>
+
+        {correlations.length === 0 ? (
+          <p className="analytics-note">
+            Not enough paired habit and vibe data in this period yet.
+          </p>
+        ) : (
+          <div className="analytics-correlations">
+            {correlations.map((c) => (
+              <div key={c.habit.id} className="analytics-corr">
+                <span className="analytics-corr-name">{c.habit.name}</span>
+                {c.enough ? (
+                  <>
+                    <span className="analytics-corr-pair">
+                      <span className="analytics-corr-level">{c.onLevel.name}</span>
+                      <span className="analytics-corr-vs">vs</span>
+                      <span className="analytics-corr-level is-off">{c.offLevel.name}</span>
+                    </span>
+                    <span
+                      className={`analytics-corr-delta ${
+                        c.delta > 0 ? 'is-up' : c.delta < 0 ? 'is-down' : ''
+                      }`}
+                    >
+                      {c.delta > 0 ? `+${c.delta}` : c.delta < 0 ? c.delta : '0'} steps
+                    </span>
+                    <span className="analytics-corr-n">
+                      {c.onDays}/{c.offDays}d
+                    </span>
+                  </>
+                ) : (
+                  <span className="analytics-corr-weak">
+                    too few paired days ({c.onDays}/{c.offDays})
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="analytics-explain">
+          A step is one place along the 17-level scale. Needs 5+ paired days in
+          each group before a comparison is shown — below that, the split is
+          noise. This is association, not causation: a habit and a good day
+          can easily share a cause.
+        </p>
+      </section>
+    </section>
+  );
+}
+
+function WellbeingTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="tip">
+      <div className="tip-date">{formatDate(label)}</div>
+      {payload.map((p) => (
+        <div key={p.dataKey} className="tip-count">
+          {p.dataKey === 'energy' ? 'Energy' : 'Stress'} {p.value ?? '—'}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TasksTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="tip">
+      <div className="tip-date">Week of {formatDate(label)}</div>
+      {payload.map((p) => (
+        <div key={p.dataKey} className="tip-count">
+          {p.dataKey === 'created' ? 'Created' : 'Completed'} {p.value ?? 0}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DailyView({
   dailyData,
   taskData,
@@ -2303,6 +3360,7 @@ function DailyView({
   viewingDate,
   setViewingDate,
   today,
+  onTaskSave,
   onOpenTask,
   onOpenHabits,
   onOpenJournal,
@@ -2315,6 +3373,10 @@ function DailyView({
   setWeightUnit
 }) {
   const [checkInOpen, setCheckInOpen] = useState(false);
+  // Local create-drawer state. Reuses the same TaskDrawer the Areas view
+  // uses, driven in 'create' mode, so a task made here is indistinguishable
+  // from one made there -- same validation, same fields, same save path.
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const currentYear = Number(today.slice(0, 4));
   const [graphYear, setGraphYear] = useState(currentYear);
 
@@ -2501,6 +3563,13 @@ function DailyView({
                 ← Today
               </button>
             )}
+            <button
+              type="button"
+              className="daily-new-task-btn"
+              onClick={() => setCreateTaskOpen(true)}
+            >
+              <span aria-hidden="true">+</span> Task
+            </button>
           </div>
         </header>
 
@@ -2650,7 +3719,6 @@ function DailyView({
           viewingDate={viewingDate}
           onTaskClick={onOpenTask}
           emptyMessage="Clear week"
-          collapsed
         />
 
         {/* Empty state if nothing happening */}
@@ -2694,6 +3762,19 @@ function DailyView({
         onSaveWeight={(kg) => onSaveWeight(viewingDate, kg)}
         onClearWeight={() => onClearWeight(viewingDate)}
       />
+
+      {/* Create-task drawer. `isAll` so the area picker shows -- the Daily
+          page is cross-area, so there is no implied area to lock it to. */}
+      <TaskDrawer
+        open={createTaskOpen}
+        mode="create"
+        task={null}
+        initialAreaId={AREAS[0].id}
+        isAll
+        onClose={() => setCreateTaskOpen(false)}
+        onSave={onTaskSave}
+        onDelete={() => {}}
+      />
     </section>
   );
 }
@@ -2709,9 +3790,9 @@ function DeadlineSection({
   viewingDate,
   onTaskClick,
   emptyMessage,
-  collapsed
+  defaultCollapsed = false
 }) {
-  const [expanded, setExpanded] = useState(!collapsed);
+  const [expanded, setExpanded] = useState(!defaultCollapsed);
   const isEmpty = tasks.length === 0;
 
   return (
@@ -2722,7 +3803,7 @@ function DeadlineSection({
       >
         <span className="daily-section-title">{title}</span>
         <span className="daily-section-count">{tasks.length}</span>
-        {!isEmpty && collapsed && (
+        {!isEmpty && (
           <span className="daily-section-toggle">
             {expanded ? '−' : '+'}
           </span>
@@ -2904,14 +3985,18 @@ function WeightChart({
                 content={<WeightTooltip unit={unit} />}
                 cursor={{ stroke: 'var(--border-strong)' }}
               />
-              {/* Raw readings: faint, because day-to-day movement is noise. */}
-              <Scatter
+              {/* Raw readings: faint and thin, because day-to-day movement is noise.
+                  Drawn as a line so the week reads as one shape rather than
+                  loose dots, with small markers kept on so it stays obvious
+                  which days were actually weighed in. */}
+              <Line
                 dataKey="reading"
                 name="reading"
-                fill="var(--text-faint)"
-                fillOpacity={0.5}
-                shape="circle"
-                r={2}
+                stroke="var(--text-faint)"
+                strokeWidth={1}
+                strokeOpacity={0.7}
+                dot={{ r: 2, fill: 'var(--text-faint)', strokeWidth: 0 }}
+                activeDot={{ r: 3, fill: 'var(--text-faint)' }}
                 isAnimationActive={false}
               />
               {/* 7-day mean: the actual signal. connectNulls so a gap reads as
@@ -2929,12 +4014,23 @@ function WeightChart({
           </ResponsiveContainer>
           <div className="weight-legend" aria-hidden="true">
             <span className="weight-legend-item">
-              <span className="weight-legend-dot" /> reading
+              <span className="weight-legend-line is-reading" /> reading
             </span>
-            <span className="weight-legend-item">
-              <span className="weight-legend-line" /> 7-day mean
-            </span>
+            {/* The mean needs 3+ weigh-ins before it has anything to say, so
+                the key only appears once there is a line to point at. */}
+            {meanSeries.length > 0 && (
+              <span className="weight-legend-item">
+                <span className="weight-legend-line" /> 7-day mean
+              </span>
+            )}
           </div>
+          {/* Otherwise the chart silently omits a series the legend promised. */}
+          {meanSeries.length === 0 && (
+            <p className="weight-chart-note">
+              The 7-day mean appears from your third weigh-in
+              {raw.length === 1 ? '.' : ` — ${raw.length} so far.`}
+            </p>
+          )}
         </div>
       )}
     </section>
