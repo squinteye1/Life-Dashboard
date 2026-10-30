@@ -26,16 +26,18 @@
   --border: #2c2c2c;
   --border-strong: #3a3a3a;
 
-  /* All three text tiers clear WCAG AA (4.5:1) against the *lightest* surface
-     they sit on, which is the worst case:
-       text      15.29:1
+  /* Text tiers, brightest first. All clear WCAG AA (4.5:1) against the
+     *lightest* surface they sit on, which is the worst case:
+       text      18.10:1
        text-dim   9.04:1
-       text-faint 6.18:1
-     The faint tier used to be #555555 at 2.5:1, which is what made the UI read
-     as muddy. Keep the three tiers clearly separated when tuning these. */
-  --text: #e8e8e8;
+       text-faint 18.10:1
+     --text-faint is pure white, as requested, so it is no longer a step
+     *below* --text. Both now sit at #ffffff and --text-dim carries the whole
+     dimming hierarchy on its own -- otherwise metadata would read brighter
+     than body copy. Keep --text-dim as the only tier that recedes. */
+  --text: #ffffff;
   --text-dim: #b4b4b4;
-  --text-faint: #949494;
+  --text-faint: #ffffff;
 
   /* Per-view accents. Every accent clears AA as text on --bg, so these are
      safe on labels as well as on fills. The jade/amber/blue come from the
@@ -46,6 +48,7 @@
   --accent-daily: #5a90e0;    /* blue     6.2:1 */
   --accent-areas: #c8a030;    /* amber    8.1:1 */
   --accent-journal: #c98aa4;  /* rose     7.3:1 */
+  --accent-analytics: #9d8fd0; /* violet  5.6:1 */
   --brand-gradient: linear-gradient(
     90deg,
     transparent,
@@ -211,82 +214,70 @@ textarea {
   pointer-events: none;
 }
 
-/* ---------- Mobile menu (hidden on desktop) ---------- */
 
-.menu-toggle {
+/* ---------- Bottom navigation ----------
+   Replaces the header pills below 640px. Fixed to the bottom so the four
+   views are always one tap away in the same place, rather than behind a
+   hamburger. Hidden on wider screens, where the header pills are used. */
+
+.bottom-nav {
   display: none;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  font-size: 18px;
-  line-height: 1;
-  color: var(--text);
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  justify-self: end;
-  flex: 0 0 auto;
-}
-
-.mobile-menu {
   position: fixed;
-  top: 0;
+  left: 0;
   right: 0;
   bottom: 0;
-  width: min(300px, 82vw);
-  z-index: 92;
-  background: var(--surface-1);
-  border-left: 1px solid var(--border-strong);
-  padding: 18px 14px;
+  z-index: 60;
+  align-items: stretch;
+  justify-content: space-around;
+  gap: 2px;
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+}
+
+.bottom-nav-item {
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  overflow-y: auto;
-  animation: drawer-slide-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-.menu-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 91;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(2px);
-  animation: drawer-fade-in 200ms ease both;
-}
-
-.mobile-menu-item {
-  display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 13px 12px;
-  font-family: var(--sans);
-  font-size: 15px;
-  text-align: left;
-  color: var(--text);
-  background: transparent;
+  justify-content: center;
+  gap: 3px;
+  padding: 7px 2px;
   border: 0;
-  border-left: 2px solid transparent;
   border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
   cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
 }
 
-.mobile-menu-item.is-active {
-  color: var(--text);
-  border-left-color: var(--menu-accent, var(--accent));
-  background: var(--surface-2);
+.bottom-nav-item:hover {
+  color: var(--text-dim);
 }
 
-.mobile-menu-item.is-danger {
-  color: #ff8f8f;
+.bottom-nav-item.is-active {
+  color: var(--tab-accent, var(--accent));
+  background: color-mix(in srgb, var(--tab-accent, var(--accent)) 12%, transparent);
 }
 
-.mobile-menu-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 8px 6px;
+.bottom-nav-icon {
+  font-size: 17px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.bottom-nav-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .brand {
@@ -1503,17 +1494,131 @@ textarea {
 .task-cell-title-display {
   width: 100%;
   min-width: 0;
+  display: flex;
+  align-items: center;
   font-weight: 500;
   color: var(--text);
   overflow: hidden;
+}
+
+.task-cell-title-text {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .task-cell-title-display.is-empty {
   color: var(--text-faint);
   font-style: italic;
   font-weight: 400;
+}
+
+/* ----- Events -----
+   A visual marker only. Events share the status set with everything else, so
+   nothing here changes behaviour -- it just makes a fixed, time-boxed
+   commitment distinguishable from open-ended work at a glance. */
+
+.task-event-marker {
+  color: var(--accent);
+  font-size: 0.95em;
+  line-height: 1;
+  margin-right: 7px;
+  flex: 0 0 auto;
+}
+
+.task-event-glyph {
+  margin-right: 5px;
+  font-size: 0.95em;
+  line-height: 1;
+}
+
+/* Kind picker in the task drawer */
+.task-drawer-event-toggle {
+  display: flex;
+  gap: 6px;
+}
+
+.task-drawer-event-btn {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 10px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.task-drawer-event-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.task-drawer-event-btn.is-active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  font-weight: 600;
+}
+
+/* Area panel: the kind filter sits beside the open count */
+.area-header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.area-filter {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.area-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.area-filter-btn:hover {
+  color: var(--text-dim);
+}
+
+.area-filter-btn.is-active {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.area-filter-count {
+  font-size: 0.85em;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 999px;
+  padding: 1px 5px;
 }
 
 
@@ -1722,16 +1827,60 @@ textarea {
 /* The table is five columns now — Title, Status, Area, Deadline, Actions —
    so it fits a phone without hiding anything. The earlier rules that dropped
    Description/Created/Modified/Completed per breakpoint are gone with them. */
+/* ---- Tasks become cards, like the Daily deadline list ----
+   A five-column table cannot show a readable title on a phone, so each task
+   becomes its own card: the title takes the full first line and can never
+   be squeezed away by the other columns competing for space. Column
+   headers are meaningless for a card list, so they are dropped. */
 @media (max-width: 640px) {
-  .task-col-title { flex: 1 1 100px; }
-  .task-col-status { flex: 0 0 96px; }
-  .task-col-area { flex: 0 0 84px; }
-  .task-col-deadline { flex: 0 0 96px; }
-  /* Tighter cells: four columns x 14px of padding is 56px of the budget. */
+  .task-table-header {
+    display: none;
+  }
+
+  .task-table-scroll {
+    border: 0;
+    background: transparent;
+    overflow-x: visible;
+  }
+
+  .task-row-data {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+
   .task-table-header > span,
   .task-row-new > *,
   .task-row-data > * {
-    padding: 6px 7px;
+    border-bottom: 0;
+    padding: 0;
+  }
+
+  .task-col-title {
+    flex: 1 1 100%;
+    order: 1;
+    min-width: 0;
+    font-size: 14px;
+  }
+
+  .task-col-status { order: 2; flex: 0 0 auto; }
+  .task-col-area { order: 3; flex: 0 0 auto; }
+  .task-col-deadline { order: 4; flex: 0 0 auto; margin-left: auto; }
+  .task-col-actions { order: 5; flex: 0 0 auto; }
+
+  .row-delete {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
   }
 }
 
@@ -2389,20 +2538,22 @@ textarea {
 }
 
 @media (max-width: 640px) {
-  /* Below 640 the four nav labels are replaced by the hamburger menu. The
-     logo and the sign-out icon stay in the header either way. The toggle
-     MUST be un-hidden here: hiding .topnav without showing it would leave
-     no navigation at all. */
+  /* Below 640 the header pills are replaced by the fixed bottom bar. The
+     logo and the sign-out icon stay in the header either way, so both
+     navigation and account actions remain reachable. */
   .topnav {
     display: none;
   }
 
-  .menu-toggle {
-    display: inline-flex;
+  .bottom-nav {
+    display: flex;
   }
 
-  /* With the nav gone, the date chip is alone on the row and space-between
-     collapses it to the start, which lines it up under the logo. */
+  /* Clear the fixed bottom bar so it never covers content. */
+  .app {
+    padding: 0 16px 108px;
+  }
+
   .header-nav-row {
     justify-content: flex-start;
     gap: 8px;
@@ -2411,6 +2562,13 @@ textarea {
   :root {
     --cell: 9px;
     --cell-gap: 2px;
+
+    /* Bump the shared scale on small screens only. A phone at arm's length
+       needs more size than the same text on a desk, and the two share one
+       token, so this is where the difference belongs. Deliberately NOT
+       applied above 640 -- desktop should not grow. */
+    --fs-label: 13px;
+    --fs-meta: 14px;
   }
   .nav-pill {
     padding: 7px 12px;
@@ -2446,6 +2604,30 @@ textarea {
   }
   .habit-card {
     padding: 14px 16px;
+  }
+
+  /* The actual *items* -- what you came to read -- rather than the chrome
+     around them. Bumped one step each on top of the token change above, since
+     these are the two places where 14-15px reads as cramped on a phone.
+     Left alone on desktop, where the same text sits at a normal viewing
+     distance. */
+  .daily-task-title {
+    font-size: 15px;
+  }
+
+  .habit-card-name {
+    font-size: 16px;
+  }
+
+  .task-cell-title-display {
+    font-size: 16px;
+  }
+
+  /* 44px keeps this above the 40px/320px minimum target size, which the
+     desktop-sized padding falls under once the viewport narrows. */
+  .daily-new-task-btn {
+    min-height: 44px;
+    padding: 10px 16px;
   }
 }
 
@@ -2540,6 +2722,40 @@ textarea {
   justify-content: flex-end;
 }
 
+/* Create-task trigger on the Daily overview. Shares the quiet-border look of
+   .today-btn next to it but is the one affirmative action in that row, so it
+   carries the daily accent and reads as the primary of the two. */
+.daily-new-task-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  background: color-mix(in srgb, var(--accent-daily) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-daily) 38%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--accent-daily);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.daily-new-task-btn span {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.daily-new-task-btn:hover {
+  background: color-mix(in srgb, var(--accent-daily) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent-daily) 55%, transparent);
+}
+
+.daily-new-task-btn:focus-visible {
+  outline: 2px solid var(--accent-daily);
+  outline-offset: 2px;
+}
+
 /* ---- Check-in summary card ---- */
 
 /* ----- Weight ----- */
@@ -2631,6 +2847,16 @@ textarea {
   position: relative;
 }
 
+/* Stands in for a series the chart cannot draw yet, so the card explains
+   itself instead of just omitting a line the legend promised. */
+.weight-chart-note {
+  margin: 8px 0 0;
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
 .weight-legend {
   display: flex;
   gap: 16px;
@@ -2647,18 +2873,17 @@ textarea {
   color: var(--text-faint);
 }
 
-.weight-legend-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--text-faint);
-}
-
+/* Both series are lines now, so the shape is shared and colour is what tells
+   them apart -- matching the two strokes on the chart. */
 .weight-legend-line {
   width: 14px;
   height: 2px;
   border-radius: 1px;
   background: var(--accent);
+}
+
+.weight-legend-line.is-reading {
+  background: var(--text-faint);
 }
 
 .weight-empty {
@@ -3403,11 +3628,12 @@ textarea {
 @media (max-width: 640px) {
   /* 32px of padding on each side costs 64px of a 360px screen. */
   .app {
-    padding: 0 16px 96px;
+    padding: 0 16px 108px;
   }
 
-  /* The header date picker is the only navigation left, so make it
-     unmistakably the primary control rather than a small chip. */
+  /* The year graphs are hidden at this width, so the date chip is how you
+     reach another day. Make it unmistakably the primary control rather than
+     a small chip. */
   .date-chip {
     padding: 8px 12px;
   }
@@ -3427,5 +3653,631 @@ textarea {
   .journal-graph,
   .habits-view > .heatmap-wrap {
     display: none;
+  }
+}
+
+/* ============================================================
+   ANALYTICS VIEW
+   ============================================================ */
+
+.analytics-view {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.analytics-header {
+  align-items: flex-end;
+}
+
+/* Segmented period control. Every panel reads from this one value, so it
+   sits above them all rather than inside any single card. */
+.analytics-periods {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.analytics-period {
+  padding: 6px 13px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.analytics-period:hover {
+  color: var(--text);
+}
+
+.analytics-period.is-active {
+  background: color-mix(in srgb, var(--accent-analytics) 18%, transparent);
+  color: var(--accent-analytics);
+}
+
+.analytics-period:focus-visible {
+  outline: 2px solid var(--accent-analytics);
+  outline-offset: 1px;
+}
+
+.analytics-span,
+.analytics-note,
+.analytics-explain {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.analytics-note {
+  padding: 10px 13px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent-areas);
+  border-radius: var(--radius-sm);
+}
+
+.analytics-explain {
+  font-size: var(--fs-label);
+  opacity: 0.85;
+}
+
+/* Headline strip. Reuses the Habits year-stats treatment. */
+.analytics-stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+
+.analytics-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.analytics-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.analytics-card-sub {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--text-dim);
+}
+
+/* ---- Habits: monthly completion bars ---- */
+
+.analytics-months {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  height: 132px;
+}
+
+.analytics-month {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+}
+
+.analytics-month-track {
+  flex: 1 1 auto;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.analytics-month-fill {
+  width: 100%;
+  background: color-mix(in srgb, var(--accent-habits) 62%, transparent);
+  border-radius: 3px 3px 0 0;
+}
+
+.analytics-month-value {
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  color: var(--text);
+}
+
+.analytics-month-label {
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* ---- Habits: per-habit ranking ---- */
+
+.analytics-habit-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.analytics-habit-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 1.4fr) minmax(60px, 2fr) 44px 52px 58px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 2px;
+  border-top: 1px solid var(--border);
+}
+
+.analytics-habit-row:first-child {
+  border-top: 0;
+}
+
+.analytics-habit-name {
+  font-size: 15px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-habit-bar,
+.analytics-band-track,
+.analytics-level-track {
+  display: block;
+  height: 6px;
+  background: var(--surface-3);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.analytics-habit-fill,
+.analytics-band-fill,
+.analytics-level-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.analytics-habit-pct,
+.analytics-habit-trend,
+.analytics-habit-streak {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  text-align: right;
+  color: var(--text-dim);
+}
+
+.analytics-habit-trend.is-up {
+  color: var(--accent-habits);
+}
+
+.analytics-habit-trend.is-down {
+  color: #ff6b6b;
+}
+
+/* ---- Wellbeing ---- */
+
+.analytics-bands {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.analytics-band {
+  display: grid;
+  grid-template-columns: 68px 1fr 46px;
+  align-items: center;
+  gap: 12px;
+}
+
+.analytics-band-fill {
+  background: var(--accent-analytics);
+}
+
+.analytics-band-label,
+.analytics-band-value {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--text);
+}
+
+.analytics-band-value {
+  text-align: right;
+  color: var(--text-dim);
+}
+
+/* Per-level counts, in scale order. The colour is the level's own swatch
+   from the picker, so the two places agree. */
+.analytics-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.analytics-level {
+  display: grid;
+  grid-template-columns: 10px minmax(84px, 1fr) minmax(60px, 2fr) 34px;
+  align-items: center;
+  gap: 10px;
+}
+
+.analytics-level-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.analytics-level-name {
+  font-size: 14px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-level-count {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  text-align: right;
+  color: var(--text-dim);
+}
+
+.analytics-averages {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.analytics-chart {
+  width: 100%;
+  min-width: 0;
+}
+
+.analytics-legend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.analytics-legend-key {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* ---- Habit vs vibe ---- */
+
+.analytics-correlations {
+  display: flex;
+  flex-direction: column;
+}
+
+.analytics-corr {
+  display: grid;
+  grid-template-columns: minmax(84px, 1fr) minmax(150px, 2fr) 82px 58px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 2px;
+  border-top: 1px solid var(--border);
+}
+
+.analytics-corr:first-child {
+  border-top: 0;
+}
+
+.analytics-corr-name {
+  font-size: 15px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-corr-pair {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.analytics-corr-level {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--accent-habits);
+  white-space: nowrap;
+}
+
+.analytics-corr-level.is-off {
+  color: var(--text-dim);
+}
+
+.analytics-corr-vs,
+.analytics-corr-n,
+.analytics-corr-weak {
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+}
+
+.analytics-corr-delta {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  text-align: right;
+  color: var(--text-dim);
+}
+
+.analytics-corr-delta.is-up {
+  color: var(--accent-habits);
+}
+
+.analytics-corr-delta.is-down {
+  color: #ff6b6b;
+}
+
+.analytics-corr-weak {
+  grid-column: 2 / -1;
+}
+
+/* ---- Responsive ---- */
+
+@media (max-width: 900px) {
+  .analytics-stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .analytics-view {
+    gap: 16px;
+  }
+
+  .analytics-stats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .analytics-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .analytics-periods {
+    width: 100%;
+  }
+
+  /* 44px rows: the period control is the one tap target that changes what
+     every number on the page says, so it gets full-width thumb-sized rows. */
+  .analytics-period {
+    flex: 1 1 0;
+    min-height: 44px;
+    padding: 10px 6px;
+  }
+
+  .analytics-card {
+    padding: 15px 14px;
+  }
+
+  .analytics-habit-row {
+    grid-template-columns: minmax(80px, 1.3fr) 1fr 40px 46px;
+    gap: 9px;
+  }
+
+  /* Streak pair is the first thing to go -- reference data, and the three
+     columns to its left already carry the ranking. */
+  .analytics-habit-streak {
+    display: none;
+  }
+
+  .analytics-habit-name,
+  .analytics-corr-name {
+    font-size: 16px;
+  }
+
+  .analytics-corr {
+    grid-template-columns: minmax(76px, 1fr) 1fr 66px;
+    gap: 9px;
+  }
+
+  .analytics-corr-n {
+    display: none;
+  }
+
+  .analytics-level {
+    grid-template-columns: 10px minmax(72px, 1fr) minmax(40px, 1.4fr) 30px;
+    gap: 8px;
+  }
+
+  .analytics-months {
+    height: 108px;
+    gap: 6px;
+  }
+}
+
+/* ---- Zone streaks ---- */
+
+.analytics-zones {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.analytics-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.analytics-zone-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.analytics-zone-label {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.analytics-zone-pct {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--accent-analytics);
+}
+
+.analytics-zone-track {
+  height: 6px;
+  background: var(--surface-3);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.analytics-zone-fill {
+  height: 100%;
+  background: var(--accent-analytics);
+  border-radius: 999px;
+}
+
+.analytics-zone-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+}
+
+.analytics-zone-meta strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* ---- Level heatmap ---- */
+
+.analytics-level-heatmap {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.analytics-level-heatmap .heatmap-wrap {
+  min-width: max-content;
+}
+
+/* ---- Dose-response ---- */
+
+.analytics-dose-headline {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.analytics-dose-headline strong {
+  font-weight: 600;
+}
+
+.analytics-dose {
+  display: flex;
+  flex-direction: column;
+}
+
+.analytics-dose-row {
+  display: grid;
+  grid-template-columns: 42px 74px minmax(90px, 1fr) 46px;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 2px;
+  border-top: 1px solid var(--border);
+}
+
+.analytics-dose-row:first-child {
+  border-top: 0;
+}
+
+.analytics-dose-bucket {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--text);
+}
+
+.analytics-dose-track {
+  height: 40px;
+  display: flex;
+  align-items: flex-end;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--border) 55%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 100% 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.analytics-dose-bar {
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+}
+
+.analytics-dose-level {
+  font-size: 15px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-dose-days {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  text-align: right;
+  color: var(--text-dim);
+}
+
+@media (max-width: 640px) {
+  .analytics-zones {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-dose-row {
+    grid-template-columns: 38px 58px minmax(70px, 1fr) 40px;
+    gap: 9px;
+  }
+
+  .analytics-dose-level {
+    font-size: 16px;
   }
 }

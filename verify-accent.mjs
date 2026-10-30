@@ -70,7 +70,23 @@ const meta = (css.match(/--fs-meta:\s*(\d+)px/) || [])[1];
 must(body === '17', `body is 17px (got ${body})`);
 must(label === '12', `--fs-label is 12px (got ${label})`);
 must(meta === '13', `--fs-meta is 13px (got ${meta})`);
-must((css.match(/font-size: 10px/g) || []).length === 2, 'only the 2 heatmap column labels stay at 10px');
+// 10px is only acceptable in the fixed-width heatmap columns and the mobile
+// nav pills, which are both width-constrained. Anywhere else it is too small.
+const tenPx = [...css.matchAll(/([^{}]+)\{[^}]*font-size:\s*10px/g)]
+  .flatMap((m) => m[1].split(',').map((s) => s.trim()).filter((s) => s.startsWith('.')))
+  .map((s) => s.split(/\s+/).pop());
+const uniqueTen = [...new Set(tenPx)].sort();
+console.log(`  rules at hardcoded 10px: ${uniqueTen.join(', ')}`);
+must(
+  uniqueTen.every((s) =>
+    ['.heatmap-month-cell', '.heatmap-day-label', '.nav-pill'].includes(s)
+  ),
+  '10px is confined to width-constrained selectors'
+);
+must(
+  uniqueTen.includes('.heatmap-month-cell') && uniqueTen.includes('.heatmap-day-label'),
+  'the two heatmap column labels opt out of the type scale'
+);
 
 console.log(bad ? `\n${bad} failure(s)` : '\nper-view accent, type scale and brand rule verified');
 process.exit(bad ? 1 : 0);

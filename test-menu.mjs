@@ -62,17 +62,22 @@ must($$('.topnav .nav-pill').length === 4, 'desktop nav still has 4 pills');
 must(!!$('.menu-toggle'), 'menu toggle present in the DOM');
 console.log('   menu closed, 4 desktop nav pills intact');
 
-console.log('\n1a. header row order: brand, then nav, then date');
-// The date chip and "today" were moved out of the nav row. Assert the
-// structural order so it cannot drift back.
+console.log('\n1a. header structure: brand row, then nav + date on one line');
+// The date chip and "today" were moved out of the nav row, and both now sit
+// inside a .header-nav-row wrapper that puts them side by side. Assert the
+// structure so it cannot drift back.
 const headerEl = $('.header');
-const rows = [...headerEl.children].map((c) =>
-  c.className.split(' ').filter((x) => !x.startsWith('is-')).join('.')
-);
+const rows = [...headerEl.children].map((c) => c.className);
 console.log(`   header children: ${JSON.stringify(rows)}`);
-must(rows[0].includes('header-top'), 'first row is the brand/actions row');
-must(rows[1] === 'topnav', 'second row is the nav');
-must(rows[2].includes('header-date'), 'third row is the date row');
+must(rows.length === 2, `header has two rows, got ${rows.length}`);
+must(rows[0] === 'header-top', 'first row is the brand/actions row');
+must(rows[1] === 'header-nav-row', 'second row holds nav and date');
+
+const navRow = $('.header-nav-row');
+const navRowKids = [...navRow.children].map((c) => c.className);
+console.log(`   header-nav-row children: ${JSON.stringify(navRowKids)}`);
+must(navRowKids.includes('topnav'), 'nav is in the shared row');
+must(navRowKids.includes('header-date'), 'date is in the shared row');
 must(!!$('.header-date .date-chip'), 'date chip lives in the date row');
 must(!$('.topnav .date-chip'), 'date chip is NOT inside the nav');
 must(!!$('.header-actions .signout-btn'), 'sign out lives in the actions row');
@@ -84,7 +89,7 @@ must(
   ),
   'header is position: sticky'
 );
-console.log('   order correct, header is sticky');
+console.log('   structure correct, header is sticky');
 
 console.log('\n1b. menu is NOT nested inside the header');
 // The header has backdrop-filter, which makes it the containing block for
