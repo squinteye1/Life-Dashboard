@@ -865,18 +865,52 @@ function computeStreak(habitData, habitId, todayKeyStr) {
   return streak;
 }
 
+// The earliest day inside `year` with at least one habit ticked, or null if
+// that year has nothing logged. Day keys are 'YYYY-MM-DD', so they sort as
+// strings. Scoped to a single year on purpose: each year keeps its own stats
+// window, so a 2025 entry must not decide where 2026 starts.
+function firstTrackedKey(habitData, year) {
+  const from = `${year}-01-01`;
+  const to = `${year}-12-31`;
+  let min = null;
+  for (const [key, day] of Object.entries(habitData || {})) {
+    if (key < from || key > to) continue;
+    if (countCompleted(day) === 0) continue;
+    if (min == null || key < min) min = key;
+  }
+  return min;
+}
+
+const EMPTY_YEAR_STATS = {
+  days: 0,
+  completions: 0,
+  perfectDays: 0,
+  bestStreak: 0,
+  pct: 0
+};
+
 function computeYearStats(habitData, grid, habitTotal, todayKeyStr) {
   const today = dateFromKey(todayKeyStr);
   const year = grid.year;
   // Walk day by day this year, and through full year if viewing past.
-  const end = grid.year === today.getFullYear() ? today : new Date(year, 11, 31);
-  const start = new Date(year, 0, 1);
+  const endKey =
+    grid.year === today.getFullYear() ? todayKeyStr : `${year}-12-31`;
+
+  // Start at the first day actually tracked, not Jan 1. Days before the first
+  // tick are days the app was not yet in use, and counting them as tracked
+  // drags the average toward zero in a way the user cannot act on: a person
+  // keeping eight habits a day from their first week reads as 5%.
+  // A year with nothing logged reads as zero, rather than a full year of 0%.
+  const startKey = firstTrackedKey(habitData, year);
+  if (!startKey || startKey > endKey) return EMPTY_YEAR_STATS;
+
   let days = 0;
   let completions = 0;
   let perfectDays = 0;
   let bestStreak = 0;
   let currentStreak = 0;
-  const cur = new Date(start);
+  const end = dateFromKey(endKey);
+  const cur = dateFromKey(startKey);
   while (cur <= end) {
     const k = todayKey(cur);
     const day = habitData[k] || {};
